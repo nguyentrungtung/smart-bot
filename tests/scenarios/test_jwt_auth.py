@@ -3,7 +3,7 @@ import jwt
 import os
 from datetime import datetime, timedelta
 from cryptography.hazmat.primitives import serialization
-from core_backend.app.middleware.auth import verify_jwt_token  # Adjusted import from root
+from app.middleware.auth import verify_jwt_token  # Adjusted import from root
 
 # Setup Mock Keypair for testing
 def get_mock_keys():

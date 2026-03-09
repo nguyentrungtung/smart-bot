@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from core_backend.app.workflows.graph import agent_graph # Assuming actual graph compiles here
+from app.workflows.graph import agent_graph # Assuming actual graph compiles here
 from langchain_core.messages import HumanMessage
 from langchain_core.messages import ToolMessage
 
@@ -28,12 +28,16 @@ async def test_weather_mcp_routing(mock_weather_mcp):
     
     user_input = HumanMessage(content="Thời tiết Hà Nội hôm nay thế nào?")
     
-    # Mocking the LiteLLM response to natively select the get_weather tool
-    mock_llm_response = AsyncMock()
-    mock_llm_response.tool_calls = [{"name": "get_weather", "args": {"location": "Hanoi"}}]
+    # Mocking the LiteLLM response to natively select the get_weather tool, then output text logic next round
+    mock_llm_response1 = AsyncMock()
+    mock_llm_response1.tool_calls = [{"name": "get_weather", "args": {"location": "Hanoi"}}]
     
-    with patch("core_backend.app.workflows.nodes.generate.llm.ainvoke", return_value=mock_llm_response):
-        with patch("core_backend.app.mcp_clients.basic_tools.get_weather", return_value=mock_weather_mcp):
+    mock_llm_response2 = AsyncMock()
+    mock_llm_response2.tool_calls = []
+    mock_llm_response2.content = "Here is the weather in Hanoi..."
+    
+    with patch("app.workflows.nodes.generate.llm.ainvoke", side_effect=[mock_llm_response1, mock_llm_response2]):
+        with patch("app.mcp_clients.basic_tools.get_weather", return_value=mock_weather_mcp):
             
             # The agent graph receives the message, routes to tool, grabs data and generates the final text
             result_state = await agent_graph.ainvoke({"messages": [user_input]})
@@ -49,11 +53,15 @@ async def test_time_mcp_routing(mock_time_mcp):
     user_input = HumanMessage(content="Bây giờ là mấy giờ rồi?")
     
     # Mock LiteLLM selecting the time tool
-    mock_llm_response = AsyncMock()
-    mock_llm_response.tool_calls = [{"name": "get_current_time", "args": {"timezone": "Asia/Ho_Chi_Minh"}}]
+    mock_llm_response1 = AsyncMock()
+    mock_llm_response1.tool_calls = [{"name": "get_current_time", "args": {"timezone": "Asia/Ho_Chi_Minh"}}]
     
-    with patch("core_backend.app.workflows.nodes.generate.llm.ainvoke", return_value=mock_llm_response):
-        with patch("core_backend.app.mcp_clients.basic_tools.get_current_time", return_value=mock_time_mcp):
+    mock_llm_response2 = AsyncMock()
+    mock_llm_response2.tool_calls = []
+    mock_llm_response2.content = "It is 2026-03-09..."
+    
+    with patch("app.workflows.nodes.generate.llm.ainvoke", side_effect=[mock_llm_response1, mock_llm_response2]):
+        with patch("app.mcp_clients.basic_tools.get_current_time", return_value=mock_time_mcp):
             
             result_state = await agent_graph.ainvoke({"messages": [user_input]})
             
