@@ -23,6 +23,10 @@ async def lifespan(app: FastAPI):
         # Initialize the global state checkpoint object
         app.state.checkpointer = AsyncPostgresSaver(pool)
         
+        # REQUIRED: Create checkpoint tables if they do not exist
+        await app.state.checkpointer.setup()
+        logger.info("LangGraph Checkpoint tables verified/created.")
+        
         yield
         
     logger.info("Shutting down cleanly, pooling destroyed.")

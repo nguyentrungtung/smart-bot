@@ -1,4 +1,4 @@
-from typing import TypedDict, Annotated
+from typing import TypedDict, Annotated, List, Dict, Any
 import operator
 from langchain_core.messages import BaseMessage
 
@@ -10,3 +10,8 @@ class GraphState(TypedDict):
     messages: Annotated[list[BaseMessage], operator.add]
     session_id: str
     user_id: str
+    # Holds raw thinking process before final response is generated
+    thinking: List[str]
+    # Generic metadata for future extensions
+    metadata: Dict[str, Any]
+
