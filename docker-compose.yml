@@ -11,9 +11,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-smartbotdb}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    profiles: ["infra", "backend"]
+    profiles: [ "infra", "backend" ]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-smartuser} -d ${POSTGRES_DB:-smartbotdb}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-smartuser} -d ${POSTGRES_DB:-smartbotdb}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -22,9 +22,9 @@ services:
     image: redis:alpine
     ports:
       - "6379:6379"
-    profiles: ["infra", "backend"]
+    profiles: [ "infra", "backend" ]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -41,12 +41,20 @@ services:
     command: [ "--config", "/app/config.yaml", "--detailed_debug" ]
     depends_on:
       - redis
-    profiles: ["infra", "backend"]
+    profiles: [ "infra", "backend" ]
 
   # Placeholder for future core_backend service
   # core_backend:
   #   build: ./core_backend
   #   ...
+
+  xweb_mcp:
+    build: ./mcp_servers/xweb_manager
+    ports:
+      - "8002:8002"
+    environment:
+      - MCP_INTERNAL_API_KEY=dev-secure-mcp-key-123
+    profiles: [ "tools", "backend" ]
 
 volumes:
   pgdata:

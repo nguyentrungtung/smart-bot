@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     # SocketIO CORS Origins
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
     
+    # MCP Security
+    MCP_INTERNAL_API_KEY: str = "dev-secure-mcp-key-123"
+
+    # Telegram HITL
+    TELEGRAM_BOT_TOKEN: str = "" # If empty, HITL will mock approval output
+    TELEGRAM_CHAT_ID: str = ""
+
     # JWT Auth Keypair location (absolute path resolver)
     KEYS_DIR: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".keys"))
 

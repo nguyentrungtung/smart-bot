@@ -26,7 +26,7 @@
 - [x] Phase 1: Research & Tech Design (Completed)
 - [x] Phase 2: Core Backend Setup (Postgres, Redis, RAGFlow, LiteLLM configs)
 - [x] Phase 3: LangGraph Boilerplate & API (Socket.io, Session Locks, PII Middleware)
-- [ ] Phase 4: MCP Servers (Xweb tool + Telegram HITL)
+- [x] Phase 4: MCP Servers (Xweb tool + Telegram HITL)
 - [ ] Phase 5: Preact Multimodal Widget UI
 
 ## 🚫 What NOT To Do (Strict Anti-Patterns)

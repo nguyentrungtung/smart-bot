@@ -1,11 +1,11 @@
 from langgraph.graph import StateGraph, START, END
 from app.workflows.state import GraphState
 from app.workflows.nodes.generate import generate_response
-from app.workflows.nodes.tools import execute_tools
+from app.workflows.nodes.tools import execute_basic_tools, execute_xweb_tool
 
 def should_continue(state: GraphState):
     """
-    Conditional routing deciding whether to execute tools or end generation
+    Conditional routing deciding whether to execute basic tools, heavy tools, or end generation
     """
     messages = state.get("messages", [])
     if not messages:
@@ -13,21 +13,30 @@ def should_continue(state: GraphState):
         
     last_message = messages[-1]
     
-    # If there are tool calls to run natively
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-        return "tools"
+        # Check if any tool is the high-risk xweb instance
+        if any(tc["name"] == "create_xweb_instance" for tc in last_message.tool_calls):
+            return "xweb_tool"
+        return "basic_tools"
         
     return END
 
 workflow = StateGraph(GraphState)
 
 workflow.add_node("agent", generate_response)
-workflow.add_node("tools", execute_tools)
+workflow.add_node("basic_tools", execute_basic_tools)
+workflow.add_node("xweb_tool", execute_xweb_tool)
 
 workflow.add_edge(START, "agent")
-workflow.add_conditional_edges("agent", should_continue, {"tools": "tools", END: END})
+workflow.add_conditional_edges("agent", should_continue, {
+    "basic_tools": "basic_tools", 
+    "xweb_tool": "xweb_tool", 
+    END: END
+})
 
-# After doing tools, we go back to agent for generating final message
-workflow.add_edge("tools", "agent")
+# After doing any tool, we go back to agent for generating final message
+workflow.add_edge("basic_tools", "agent")
+workflow.add_edge("xweb_tool", "agent")
 
-agent_graph = workflow.compile()
+# COMPILE INSTRUCTIONS: we specifically interrupt execution right before hitting the xweb_tool node
+agent_graph = workflow.compile(interrupt_before=["xweb_tool"])
