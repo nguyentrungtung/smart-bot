@@ -182,9 +182,6 @@ smart-bot/
 │   ├── scripts/                  # Utility execution scripts
 │   │   ├── seed.py               # Pre-populates DB with mock UserProfiles & RAG vectors for testing
 │   │   └── run_clean_tests.py    # Master script to automate Docker teardown, rebuild, and pytest
-│   ├── tests/                    # Automated Test Suites
-│   │   ├── unit/                 # Mocked function testing
-│   │   └── scenarios/            # Integration logic for edge cases (PII, RAG, File limits)
 │   ├── alembic.ini               # Alembic CLI config
 │   ├── Dockerfile
 │   └── requirements.txt
@@ -197,6 +194,9 @@ smart-bot/
 │   │   ├── bootloader.js # Injects iframe
 │   │   └── iframe_app/   # Actual chat UI
 │   └── package.json
+├── tests/                # Automated Test Suites
+│   ├── unit/             # Mocked function testing
+│   └── scenarios/        # Integration logic for edge cases (PII, RAG, File limits)
 └── ragflow_config/       # Configs for standalone RAG service
 ```
 
