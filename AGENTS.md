@@ -36,5 +36,6 @@
 4. **NO** Socket.io Wildcard CORS (`*`): Strictly load domains from `.env`/`config.yaml`.
 5. **NO** Missing Locks: Always add a `timeout` (TTL) parameter to Redis locks to prevent Zombie sessions.
 6. **NO** Custom Authentication Headers for Browser WebSockets: Pass JWT tokens exclusively inside the `auth` payload during Socket IO initialization.
-7. **NO** Raw File Uploads: Strictly reject PDF/DOCX. Only convert Audio via memory buffer (pydub/FFmpeg) before hitting Whisper.
-8. **NO** RAG L2 Distance: Always use Cosine Similarity (`<=>`) operator for `pgvector` queries.
+7. **NO** Secret Key JWTs: Do NOT use `HS256` or string secrets for JWT. The project MUST generate and use an **RSA Keypair (RS256)** for signing and decoding tokens.
+8. **NO** Raw File Uploads: Strictly reject PDF/DOCX. Only convert Audio via memory buffer (pydub/FFmpeg) before hitting Whisper.
+9. **NO** RAG L2 Distance: Always use Cosine Similarity (`<=>`) operator for `pgvector` queries.

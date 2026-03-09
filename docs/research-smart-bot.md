@@ -158,7 +158,7 @@ smart-bot/
 │   │   │   └── helpers.py        # Generic text parsers, date formatting, etc
 │   │   ├── middleware/           # Request/Response interceptors
 │   │   │   ├── pii_scrubber.py   # Regex to mask sensitive data (PII, Passwords)
-│   │   │   ├── auth.py           # JWT token validation & session locking
+│   │   │   ├── auth.py           # JWT token validation (RS256 Public Key) & session locking
 │   │   │   └── format.py         # Response payload normalization
 │   │   ├── schemas/              # Data validation and strict rule definitions
 │   │   │   ├── rules.yaml        # Business rules (e.g. Confidence > 0.7, max 3 images)
@@ -225,7 +225,7 @@ The folder structure (`workflows/`) ensures the code is highly maintainable:
 - **`workflows/`**: The true "brain" of the agent. Splitting the State from the Graph logic prevents circular import errors, while `nodes/` isolates chunked execution tasks (like generating vs fetching RAG).
 - **`hitl.py`**: Contains the logic for intercepting state at breakpoints and waiting for human manager UI approvals.
 - **`config/`**: Centralizes environment variables, easily allowing swapping between staging/prod databases or LLM endpoints.
-- **`middleware/`**: Protects the core system. Contains interceptors that run *before* requests hit the AI (e.g., `auth.py` for checking JWT session locks, `pii_scrubber.py` to redact passwords/phone numbers via regex to protect enterprise data) and *after* for payload formatting.
+- **`middleware/`**: Protects the core system. Contains interceptors that run *before* requests hit the AI (e.g., `auth.py` for decoding JWT via RS256 Public Key and checking session locks, `pii_scrubber.py` to redact passwords/phone numbers via regex to protect enterprise data) and *after* for payload formatting.
 - **`schemas/`**: Houses Pydantic models and validation rules. It strictly blocks illegal file uploads (e.g., rejecting PDFs/Executables, limiting images to 5MB) and defines business rules (e.g., RAG Confidence Threshold must be `> 0.7`).
 - **`utils/`**: Holds common, cross-node modules like standardized logging formats, heavy string-manipulation helpers, or shared data-format converters so that node files remain strictly about business logic.
 - **`multimodal/`**: Contains the decoupled logic `vision.py` and `audio.py` for dealing specifically with file I/O streams and connecting to the Whisper/TTS APIs, keeping the core LangGraph nodes free of massive image base64 processing blocks.

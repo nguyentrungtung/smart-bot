@@ -44,6 +44,7 @@ LIMIT 5;
 ## 4. WebSocket Security
 - **Strict CORS**: Do NOT use `socketio.AsyncServer(cors_allowed_origins="*")`. This defeats the iframe isolation. The `cors_allowed_origins` must load a strict list of domains from the backend environment variables (`config.yaml`).
 - **Authentication**: Do NOT use HTTP Headers for WebSocket connection auth. Browser WebSockets drop them. Pass the JWT payload explicitly inside the `auth` object.
+- **JWT Signature (RS256)**: The project manages its own Authentication. The backend must generate an RSA keypair. It issues JWT tokens signed with the **Private Key**, and the `auth.py` middleware MUST use `PyJWT` with the `RS256` algorithm to decode the token using the corresponding **Public Key**.
 ```javascript
 // REQUIRED BOILERPLATE: Frontend Preact Widget
 import { io } from "socket.io-client";
@@ -51,7 +52,7 @@ import { io } from "socket.io-client";
 // Do NOT set extraHeaders: { Authorization... }
 const socket = io("https://api.domain.com", {
   auth: {
-    token: "JWT_TOKEN_HERE" // Must be validated by backend `auth.py` middleware
+    token: "JWT_TOKEN_HERE" // Must be validated by backend `auth.py` middleware via Public Key RS256
   }
 });
 ```

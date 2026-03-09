@@ -17,3 +17,4 @@ You are operating within the Claude Code terminal environment for the **Smart-Bo
 - **Do not hallucinate vector math**: Use exact `pgvector` Cosine Similarity.
 - **Do not overcomplicate LangGraph**: Keep Nodes pure and stateless logic functions. All State modifications must strictly type-check against `state.py`.
 - **Do not leak PII**: Ensure `middleware/pii_scrubber.py` is called before LiteLLM.
+- **Do not use basic JWT strings**: Always configure `PyJWT` with the `RS256` algorithm and utilize generated `.pem` RSA key pairs for logic involving `auth.py`.
