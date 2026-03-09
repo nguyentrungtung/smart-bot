@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart-Bot Widget Demo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .hero {
+            text-align: center;
+            margin-top: 5rem;
+            max-width: 600px;
+        }
+
+        h1 {
+            color: #2c3e50;
+            font-size: 2.5rem;
+        }
+
+        p {
+            color: #7f8c8d;
+            line-height: 1.6;
+        }
+
+        /* The Widget Iframe Container */
+        #smart-bot-container {
+            position: fixed;
+            bottom: 0;
+            right: 0;
+            z-index: 1000;
+            border: none;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            /* Initial size - will be updated by postMessage */
+            width: 80px;
+            height: 80px;
+        }
+
+        #smart-bot-iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: transparent;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="hero">
+        <h1>Smart-Bot Integration Demo</h1>
+        <p>This page simulates a client's website embedding the Smart-Bot advisor via a secure iframe. The widget
+            dynamically resizes itself based on its internal content using a 2-way postMessage bridge.</p>
+    </div>
+
+    <!-- The Iframe Wrapper -->
+    <div id="smart-bot-container">
+        <iframe id="smart-bot-iframe" src="http://localhost:5173" title="Smart-Bot Advisor" allow="microphone"></iframe>
+    </div>
+
+    <script>
+        const iframe = document.getElementById('smart-bot-iframe');
+        const container = document.getElementById('smart-bot-container');
+
+        // SECURITY: Whitelist the widget's origin
+        const WIDGET_ORIGIN = "http://localhost:5173";
+
+        // 1. Send Auth Token to Widget using postMessage
+        window.onload = () => {
+            const mockJWT = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy_parent_token";
+
+            // Wait a bit for iframe to load before sending auth
+            setTimeout(() => {
+                iframe.contentWindow.postMessage({
+                    type: "SMART_BOT_AUTH",
+                    token: mockJWT
+                }, WIDGET_ORIGIN);
+                console.log("Sent Auth Token to Widget");
+            }, 1500);
+        };
+
+        // 2. Listen for Resize Events from Widget
+        window.addEventListener('message', (event) => {
+            if (event.origin !== WIDGET_ORIGIN) return;
+
+            if (event.data.type === "SMART_BOT_RESIZE") {
+                const { width, height } = event.data;
+                // Update container dimensions
+                container.style.width = width + 'px';
+                container.style.height = height + 'px';
+            }
+        });
+    </script>
+</body>
+
+</html>

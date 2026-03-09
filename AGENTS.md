@@ -27,7 +27,7 @@
 - [x] Phase 2: Core Backend Setup (Postgres, Redis, RAGFlow, LiteLLM configs)
 - [x] Phase 3: LangGraph Boilerplate & API (Socket.io, Session Locks, PII Middleware)
 - [x] Phase 4: MCP Servers (Xweb tool + Telegram HITL)
-- [ ] Phase 5: Preact Multimodal Widget UI
+- [x] Phase 5: Preact Multimodal Widget UI (Completed)
 
 ## 🚫 What NOT To Do (Strict Anti-Patterns)
 1. **NO** Linux/Bash Syntax: The host OS is Windows 11. All terminal commands must be Windows PowerShell compatible.
