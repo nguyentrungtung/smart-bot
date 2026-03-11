@@ -3,7 +3,7 @@
 ## 📌 Project Overview
 - **Name:** Smart-Bot MVP
 - **Goal:** Enterprise-grade AI advisor and internal action-executor (multimodal, iframe widget, RAG, custom MCP tools).
-- **Tech Stack:** Preact (Widget), Python 3.11+, LangGraph, LiteLLM, FastAPI/Socket.io, RAGFlow, PostgreSQL (pgvector), Redis, Celery.
+- **Tech Stack:** Preact (Widget), Python 3.11+, LangGraph, LiteLLM (Gemini 2.5-flash), FastAPI/Socket.io, RAGFlow, PostgreSQL (pgvector), Redis, Celery.
 - **Current Phase:** Building MVP.
 
 ## 🧠 How You (The AI) Should Think
@@ -28,6 +28,10 @@
 - [x] Phase 3: LangGraph Boilerplate & API (Socket.io, Session Locks, PII Middleware)
 - [x] Phase 4: MCP Servers (Xweb tool + Telegram HITL)
 - [x] Phase 5: Preact Multimodal Widget UI (Completed)
+- [x] Phase 6: Infrastructure & Backend Deep-Dive (Completed)
+- [x] Phase 7: Full System Realization & Gaps (Completed)
+- [x] Phase 8: Gemini 2.5 Upgrade & Multimodal Refactoring (Completed)
+
 
 ## 🚫 What NOT To Do (Strict Anti-Patterns)
 1. **NO** Linux/Bash Syntax: The host OS is Windows 11. All terminal commands must be Windows PowerShell compatible.

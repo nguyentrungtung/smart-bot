@@ -1,57 +1,78 @@
-import { useState } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import { ChevronDown, ChevronUp, BrainCircuit } from 'lucide-preact';
+import { marked } from 'marked';
 
-export function ThoughtStream({ thoughts }) {
+marked.setOptions({ breaks: true, gfm: true });
+
+function renderMarkdown(text) {
+    try {
+        return { __html: marked.parse(text) };
+    } catch {
+        return { __html: text };
+    }
+}
+
+export function ThoughtStream({ thought }) {
     const [isExpanded, setIsExpanded] = useState(false);
+    const [seconds, setSeconds] = useState(0);
+    const timerRef = useRef(null);
+    const contentRef = useRef(null);
 
-    if (!thoughts || thoughts.length === 0) return null;
+    // Auto-expand when first thought content arrives
+    useEffect(() => {
+        if (thought && !isExpanded) {
+            setIsExpanded(true);
+        }
+    }, [!!thought]);
+
+    // Timer: start counting when thought content appears, stop when cleared
+    useEffect(() => {
+        if (thought && !timerRef.current) {
+            setSeconds(0);
+            timerRef.current = setInterval(() => {
+                setSeconds(prev => +(prev + 0.1).toFixed(1));
+            }, 100);
+        }
+        if (!thought && timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+        }
+        return () => {
+            if (timerRef.current) {
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+            }
+        };
+    }, [!!thought]);
+
+    // Auto-scroll the thought content to bottom as new tokens arrive
+    useEffect(() => {
+        if (contentRef.current && isExpanded) {
+            contentRef.current.scrollTop = contentRef.current.scrollHeight;
+        }
+    }, [thought, isExpanded]);
+
+    if (!thought) return null;
 
     return (
-        <div className="thought-container bot" style={{ marginBottom: '1rem' }}>
+        <div className="thought-container bot" style={{ marginBottom: '0.5rem', padding: '0 1rem' }}>
             <div
                 className="thought-header"
                 onClick={() => setIsExpanded(!isExpanded)}
-                style={{
-                    display: 'flex',
-                    alignSelf: 'flex-start',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    padding: '0.5rem 0.75rem',
-                    background: 'rgba(99, 102, 241, 0.1)',
-                    borderRadius: 'var(--radius-md)',
-                    cursor: 'pointer',
-                    fontSize: '0.8125rem',
-                    color: 'var(--primary)',
-                    border: '1px solid rgba(99, 102, 241, 0.2)',
-                    transition: 'var(--transition)'
-                }}
             >
-                <BrainCircuit size={16} />
-                <span style={{ fontWeight: 600 }}>Tiến trình suy nghĩ</span>
-                {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                <BrainCircuit size={14} />
+                <span style={{ fontWeight: 600, flex: 1 }}>
+                    🧠 Smart-bot đang thinking... {seconds > 0 ? `(${seconds}s)` : ''}
+                </span>
+                {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             </div>
 
             {isExpanded && (
                 <div
+                    ref={contentRef}
                     className="thought-content"
-                    style={{
-                        marginTop: '0.5rem',
-                        padding: '0.75rem',
-                        background: 'rgba(15, 23, 42, 0.4)',
-                        borderRadius: 'var(--radius-md)',
-                        fontSize: '0.8125rem',
-                        color: 'var(--text-muted)',
-                        lineHeight: '1.4',
-                        borderLeft: '2px solid var(--primary)',
-                        animation: 'fadeIn 0.3s ease'
-                    }}
-                >
-                    {thoughts.map((t, i) => (
-                        <div key={i} style={{ marginBottom: i < thoughts.length - 1 ? '0.5rem' : 0 }}>
-                            {t}
-                        </div>
-                    ))}
-                </div>
+                    dangerouslySetInnerHTML={renderMarkdown(thought)}
+                />
             )}
         </div>
     );

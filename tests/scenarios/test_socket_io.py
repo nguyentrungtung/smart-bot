@@ -1,6 +1,7 @@
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, patch
+from contextlib import asynccontextmanager
 
 # Adjusted import from root
 from app.api.socket_handler import handle_message, connect as handle_connect 
@@ -13,7 +14,7 @@ def mock_sio():
 @pytest.fixture
 def mock_redis():
     """Returns a mocked redis client that skips real locking mechanics"""
-    with patch("app.api.socket_handler.get_redis") as mock_get_redis:
+    with patch("app.api.socket_handler.get_redis", new_callable=AsyncMock) as mock_get_redis:
         # get_redis returning the mock client
         mock_client = AsyncMock()
         mock_get_redis.return_value = mock_client
@@ -37,9 +38,6 @@ async def test_socket_connection_accepted_with_auth(mock_sio):
     environ = {"REMOTE_ADDR": "127.0.0.1"}
     auth = {"token": "VALID_MOCK_JWT"}
     
-    # Mocking both JWT decoder AND the internal socketio state context manager
-    from contextlib import asynccontextmanager
-    
     @asynccontextmanager
     async def mock_session(sid):
         yield {} # Mock dictionary for session
@@ -55,18 +53,27 @@ async def test_socket_connection_accepted_with_auth(mock_sio):
 async def test_handle_message_session_lock(mock_sio, mock_redis):
     """Ensure the handler creates a Redis timeout lock of 30 seconds explicitly"""
     
-    from contextlib import asynccontextmanager
-    
     lock_called_args = {}
     
-    @asynccontextmanager
-    async def mock_lock(key, timeout, blocking_timeout):
-        lock_called_args['key'] = key
-        lock_called_args['timeout'] = timeout
-        lock_called_args['blocking_timeout'] = blocking_timeout
-        yield True # Acquired
+    class MockLock:
+        def __init__(self, key, timeout, blocking_timeout):
+            self.key = key
+            self.timeout = timeout
+            self.blocking_timeout = blocking_timeout
+            
+        async def acquire(self):
+            lock_called_args['key'] = self.key
+            lock_called_args['timeout'] = self.timeout
+            lock_called_args['blocking_timeout'] = self.blocking_timeout
+            return True # Acquired
+            
+        async def release(self):
+            pass
 
-    mock_redis.lock = mock_lock
+    def mock_lock_gen(key, timeout, blocking_timeout):
+        return MockLock(key, timeout, blocking_timeout)
+
+    mock_redis.lock = mock_lock_gen
     
     sid = "test_sid"
     data = {"session_id": "sid_789", "content": "Hello bot"}

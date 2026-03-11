@@ -117,10 +117,10 @@ model_list:
       model: openai/local-model      # Name mappings for LM Studio
       api_base: http://host.docker.internal:1234/v1 # LM Studio default local port
       api_key: "lm-studio"
-  - model_name: lm-studio-model
+  - model_name: gemini-2.5-flash
     litellm_params:
-      model: openai/gpt-4o
-      api_key: os.environ/OPENAI_API_KEY
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
   
   # Embedding Model
   - model_name: lm-studio-embedding
@@ -140,95 +140,118 @@ router_settings:
   cache_responses: true
 ```
 
-### 4.3 Directory Structure
+### 4.3 Directory Structure (Annotated Logic)
 ```text
-smart-bot/
-├── .env                  # Global environment variables
-├── docker-compose.yml    # Main orchestration
-├── core_backend/                 # Python, LangGraph, Socket.IO
-│   ├── app/
-│   │   ├── config/               # Global config (litellm urls, redis, db)
-│   │   ├── api/                  # REST API & WebSocket endpoints
-│   │   ├── mcp_clients/          # SSE clients communicating with MCP servers
-│   │   ├── prompts/              # Centralized System Prompt Management
-│   │   │   ├── index.py          # Prompt builder functions
-│   │   │   └── templates/        # .txt or structured config files
-│   │   ├── utils/                # Common utility functions
-│   │   │   ├── logger.py         # Custom structured logging
-│   │   │   └── helpers.py        # Generic text parsers, date formatting, etc
-│   │   ├── middleware/           # Request/Response interceptors
-│   │   │   ├── pii_scrubber.py   # Regex to mask sensitive data (PII, Passwords)
-│   │   │   ├── auth.py           # JWT token validation (RS256 Public Key) & session locking
-│   │   │   └── format.py         # Response payload normalization
-│   │   ├── schemas/              # Data validation and strict rule definitions
-│   │   │   ├── rules.yaml        # Business rules (e.g. Confidence > 0.7, max 3 images)
-│   │   │   └── validators.py     # Pydantic models, strict MIME type & file size checks
-│   │   ├── multimodal/           # Media Processing pipelines
-│   │   │   ├── vision.py         # Image -> Base64 parsing for LLMs
-│   │   │   └── audio.py          # STT (Whisper) & TTS processing loops
-│   │   ├── memory/               # Memory Layer
-│   │   │   ├── short_term.py     # Session thread state (Thread IDs)
-│   │   │   └── long_term.py      # Profile DB (preferences, behavior, name)
-│   │   └── workflows/            # LangGraph Flows & State
-│   │       ├── state.py          # Defined GraphState schema
-│   │       ├── nodes/            # Isolated node execution functions
-│   │       │   ├── rag_search.py # Native backend logic to query pgvector (Not MCP)
-│   │       │   └── ...           # Other nodes (generate, route, etc)
-│   │       ├── hitl.py           # Human-In-The-Loop confirmation handlers
-│   │       └── graph.py          # Compile the main StateGraph
-│   ├── migrations/               # Alembic database schema migrations
-│   │   ├── versions/             # Auto-generated SQL version scripts
-│   │   └── env.py                # Alembic environment config
-│   ├── scripts/                  # Utility execution scripts
-│   │   ├── seed.py               # Pre-populates DB with mock UserProfiles & RAG vectors for testing
-│   │   └── run_clean_tests.py    # Master script to automate Docker teardown, rebuild, and pytest
-│   ├── alembic.ini               # Alembic CLI config
-│   ├── Dockerfile
-│   └── requirements.txt
-├── mcp_servers/          # Independent Tool Servers
-│   ├── basic_tools/      # Simple utility server (Time, Weather via open-meteo)
-│   ├── xweb_manager/     # MCP server for website creation
-│   └── pos_integration/  # MCP server for order checking
-├── frontend_widget/      # Preact/Vanilla JS embeddable script
-│   ├── src/
-│   │   ├── bootloader.js # Injects iframe
-│   │   └── iframe_app/   # Actual chat UI
-│   └── package.json
-├── tests/                # Automated Test Suites
-│   ├── unit/             # Mocked function testing
-│   └── scenarios/        # Integration logic for edge cases (PII, RAG, File limits)
-└── ragflow_config/       # Configs for standalone RAG service
+core_backend/                         # Main Backend Service (FastAPI + Socket.IO + LangGraph)
+|-- app/
+|   |-- __init__.py                   # FastAPI app factory & ASGI mount point
+|   |-- main.py                       # Entrypoint: tao FastAPI instance, mount Socket.IO & routers
+|   |
+|   |-- api/                          # === API LAYER (Giao tiep voi Frontend) ===
+|   |   |-- auth_routes.py            # REST endpoints: JWT Login, Register, Guest token generation
+|   |   |-- socket_handler.py         # WebSocket hub: nhan message tu user, dieu phoi LangGraph,
+|   |                                 #   stream token ve frontend, xu ly multimodal upload (image/audio)
+|   |
+|   |-- config/                       # === SYSTEM CONFIGURATION ===
+|   |   |-- settings.py               # Pydantic BaseSettings: quan ly ENV (DB_URL, REDIS_URL, LITELLM_URL,
+|   |                                 #   LLM_MODEL, EMBEDDING_MODEL, JWT keys)
+|   |
+|   |-- memory/                       # === DATA PERSISTENCE & USER PROFILES ===
+|   |   |-- long_term.py              # CRUD logic cho UserProfile table: luu ten, so thich, hanh vi
+|   |                                 #   cua khach hang. Duoc goi boi fetch_profile & profile_analyzer nodes.
+|   |
+|   |-- multimodal/                   # === MEDIA ENGINE (Vision & Audio) ===
+|   |   |-- processor.py              # Trung tam xu ly media: convert raw Base64/binary -> LangChain
+|   |   |                             #   HumanMessage content blocks (image_url, input_audio).
+|   |   |-- capabilities.py           # Model capability discovery: kiem tra LLM co ho tro Vision/Audio
+|   |                                 #   hay khong, de quyet dinh pipeline xu ly phu hop.
+|   |
+|   |-- prompts/                      # === PROMPT ENGINEERING ===
+|   |   |-- advisor.py                # Xay dung System Prompt phuc tap: inject RAG context, user profile,
+|   |   |                             #   business rules, va persona instructions vao prompt.
+|   |   |-- templates/                # Raw text templates cho cac loai prompt khac nhau
+|   |       |-- system_prompt.txt     # Template System Prompt chinh cua Bot
+|   |
+|   |-- utils/                        # === SHARED TECHNICAL UTILITIES ===
+|   |   |-- db.py                     # Database pool initializer & LangGraph PostgresSaver checkpointer.
+|   |   |                             #   Tao connection pool async cho tat ca module dung chung.
+|   |   |-- logger.py                 # Structured logging: format chuan cho debug (timestamp, module, level)
+|   |   |-- pii_mask.py               # Security: Regex scrub so dien thoai, email, password truoc khi
+|   |                                 #   gui data len Cloud LLM. Bao ve du lieu doanh nghiep.
+|   |
+|   |-- workflows/                    # === LANGGRAPH BRAIN (Core AI Architecture) ===
+|       |-- state.py                  # GraphState TypedDict: dinh nghia schema chung cho tat ca node
+|       |                             #   (messages, session_id, user_id, rag_documents, thinking, metadata)
+|       |-- graph.py                  # StateGraph compiler: lap ghep cac node thanh cyclic graph,
+|       |                             #   cau hinh checkpointer (PostgresSaver) cho Short-Term Memory,
+|       |                             #   va compile thanh runnable graph.
+|       |-- hitl.py                   # Human-In-The-Loop: gui thong bao Telegram khi can manager phe duyet,
+|       |                             #   cung cap REST webhook `/api/v1/hitl/approve/{id}` de resume graph.
+|       |
+|       |-- nodes/                    # === ISOLATED PROCESSING NODES (Tung "ky nang" cua Bot) ===
+|           |-- generate.py           # CORE NODE: Goi LiteLLM API, xu ly guard fallback, emit Socket.IO
+|           |                         #   events (message_stream, message_complete). Day la node chinh
+|           |                         #   tao ra cau tra loi cho nguoi dung.
+|           |-- guard.py              # SECURITY NODE: Kiem tra message co phai spam/off-topic khong.
+|           |                         #   Scan TOAN BO lich su hoi thoai de phat hien multimodal context.
+|           |                         #   Neu bypass -> tra ve fallback message ngay lap tuc.
+|           |-- rag_search.py         # RAG NODE: Thuc hien vector similarity search trong PostgreSQL
+|           |                         #   (pgvector). Inject ket qua tim kiem vao GraphState.rag_documents
+|           |                         #   de LLM co them context khi tra loi.
+|           |-- tools.py              # TOOL NODE: Thuc thi cac function nhu get_time, get_weather.
+│   │       ├── nodes/            # Isolated Logic Units (Processing Nodes)
+│   │           ├── generate.py   # Core Generation: delegates to LiteLLM & handles fallbacks
+│   │           ├── guard.py      # Security/Hallucination Guard: blocks unrelated text queries
+│   │           ├── rag_search.py # RAG Logic: performs native vector search in PostgreSQL (pgvector)
+│   │           ├── tools.py      # Tool Executor: thuc thi cac lenh nhu update_user_profile
+│   │           ├── tool_defs.py  # Definitions: JSON schemas cho LiteLLM's function calling
+│   │           ├── stream_handler.py # Parser: Real-time XML/Thinking tag parsing for WebSockets
+│   │           ├── fetch_profile.py  # Profile Ingestion: nạp dữ liệu User từ DB vào State
+│   │           └── profile_analyzer.py # Deprecated/Batch: Dung cho phan tich chuyen sau hang loat
+|
+|-- scripts/                          # === UTILITY & DEVOPS SCRIPTS ===
+|   |-- seed.py                       # Pre-seed DB voi mock data (UserProfiles, RAG vectors) de test
+|   |-- verify_multimodal_memory.py   # Automated test: kiem tra multimodal context awareness & guard
+|
+|-- tests/                            # === BACKEND TEST SUITE (Pytest) ===
+|   |-- unit/                         # Function-level isolated testing (mock dependencies)
+|   |-- scenarios/                    # Integration tests: PII masking, token loops, DB locks, Socket.IO
+|       |-- test_socket_io.py         # Test Socket.IO connection, message handling, Redis locks
+|
+|-- Dockerfile                        # Container packaging cho core_backend service
+|-- requirements.txt                  # Python dependencies (langchain, litellm, socketio, fastapi...)
 ```
 
 ### 4.4 Advanced Memory & Personalization Strategy
 To provide deeply personalized answers for authenticated users, memory is heavily segregated:
 
 **1. Short-Term Memory (Session Context)**
-- Managed natively by LangGraph's built-in `MemorySaver` (using Postgres or Redis).
+- Managed natively by LangGraph's `PostgresSaver` checkpointer (configured in `utils/db.py`).
 - Tied directly to a specific `thread_id` (a single chat session).
 - Responsible for exactly "what were we just talking about 5 minutes ago?".
 
 **2. Long-Term Memory (User Profile & Behavior)**
-- Managed as custom PostgreSQL tables queried independently of the core LangChain message history.
+- Managed via `memory/long_term.py` with custom PostgreSQL tables.
 - **Data Categories**:
   - *Static Profile*: Name, Job Title, Company, verified email.
-  - *Dynamic Preferences*: Extracted continuously from chats (e.g., "User prefers short technical answers", "User is interested in the CRM product").
+  - *Dynamic Preferences*: Extracted continuously from chats (e.g., "User prefers short technical answers").
   - *Behavioral Logs*: Purchase history, features interacted with.
-- **Flow Integration**: When a user connects, their Long-Term Profile is fetched and injected into the LangGraph `State` as system context *before* the LLM generates a response. A background Celery task analyzes completed chat sessions to extract new facts and update this Long-Term Profile asynchronously.
+- **Flow Integration**: 
+  - *Ingestion*: `nodes/fetch_profile.py` tải Profile vào GraphState khi bắt đầu turn.
+  - *Explicit Update (Reactive)*: Agent sử dụng tool `update_user_profile` để cập nhật ngay lập tức khi phát hiện người dùng cung cấp thông tin mới (Tên, sở thích, sự thật). Cách này tối ưu hơn việc quét lại toàn bộ sau mỗi turn.
+  - *Background Extraction (Optional)*: `nodes/profile_analyzer.py` có thể được gọi định kỳ để phân tích hành vi tinh tế.
 
-### 4.5 Development Workflow (LangGraph Modularity)
-The folder structure (`workflows/`) ensures the code is highly maintainable:
-- **`state.py`**: Defines the precise schema (Pydantic models / `TypedDict`) that flows between nodes.
-- **`prompts/`**: A centralized location to manage all LLM system prompts, ensuring the persona and instructions remain consistent across the application rather than hardcoded in individual files.
-- **`nodes/rag_search.py`**: RAG is a core pipeline feature, not an external tool. The graph natively executes a node that performs vector similarity search against the PostgreSQL (`pgvector`) database using LangChain's vectorstore integrations, injecting the retrieved context directly into the graph state.
-- **`nodes/` (General)**: Each node (e.g., `analyze_intent`, `execute_tool`, `generate_response`) is a separate file that strictly reads from, and returns updates to, the State.
-- **`workflows/`**: The true "brain" of the agent. Splitting the State from the Graph logic prevents circular import errors, while `nodes/` isolates chunked execution tasks (like generating vs fetching RAG).
-- **`hitl.py`**: Contains the logic for intercepting state at breakpoints and waiting for human manager UI approvals.
-- **`config/`**: Centralizes environment variables, easily allowing swapping between staging/prod databases or LLM endpoints.
-- **`middleware/`**: Protects the core system. Contains interceptors that run *before* requests hit the AI (e.g., `auth.py` for decoding JWT via RS256 Public Key and checking session locks, `pii_scrubber.py` to redact passwords/phone numbers via regex to protect enterprise data) and *after* for payload formatting.
-- **`schemas/`**: Houses Pydantic models and validation rules. It strictly blocks illegal file uploads (e.g., rejecting PDFs/Executables, limiting images to 5MB) and defines business rules (e.g., RAG Confidence Threshold must be `> 0.7`).
-- **`utils/`**: Holds common, cross-node modules like standardized logging formats, heavy string-manipulation helpers, or shared data-format converters so that node files remain strictly about business logic.
-- **`multimodal/`**: Contains the decoupled logic `vision.py` and `audio.py` for dealing specifically with file I/O streams and connecting to the Whisper/TTS APIs, keeping the core LangGraph nodes free of massive image base64 processing blocks.
+### 4.5 Detailed Module Responsibilities
+The folder structure ensures the code is highly maintainable:
+- **`workflows/state.py`**: Định nghĩa schema dữ liệu (`TypedDict`) duy nhất chạy xuyên suốt các node.
+- **`workflows/graph.py`**: Rút gọn quy trình, loại bỏ việc cưỡng bức phân tích profile sau mỗi tin nhắn để giảm latency.
+- **`workflows/nodes/tools.py`**: Tích hợp logic xử lý DB trực tiếp cho các tool cập nhật Profile, giúp AI phản hồi "Tôi đã ghi nhớ tên bạn" một cách tự nhiên.
+- **`workflows/nodes/`**: Moi file la mot "ky nang" rieng biet cua Bot. Vi du: `rag_search.py` chi lo tim du lieu, `generate.py` chi lo goi AI. Viec tach nho nay giup ban debug cuc nhanh khi co loi o mot khau cu the.
+- **`multimodal/processor.py`**: Don vi xu ly trung tam cho hinh anh va am thanh. No tu dong chuan hoa cac dau vao hon hop (Text + Image + Voice) ve dinh dang ma Gemini/GPT hieu duoc.
+- **`api/socket_handler.py`**: Cua ngo giao tiep thoi gian thuc. No chiu trach nhiem nhan tin nhan tu nguoi dung, quan ly session lock (tranh spam) va dieu phoi viec stream ket qua tu AI ve cho Web Widget.
+- **`utils/pii_mask.py`**: Lop bao mat quan trong, tu dong quet va che cac thong tin nhay cam (SDT, Email, Password) truoc khi gui du lieu len Cloud LLM.
+- **`memory/long_term.py`**: Chua cac cau lenh SQL toi uu de luu tru va truy van "ky uc dai han" cua khach hang, giup Bot cang chat cang thong minh.
+- **`workflows/nodes/stream_handler.py`**: Bo phan tich (parser) luong du lieu. No boc tach phan "Deep Thinking" cua AI (nam trong the `<thinking>`) de hien thi rieng tren giao dien, tao cam giac Bot dang thuc su suy nghi.
 
 ### 4.6 Streaming & Thought Process UI (Agentic Reasoning)
 To achieve an advanced UI where the AI's internal reasoning (e.g., "Thought for 5s") is separated from the final response, the streaming architecture is heavily customized:

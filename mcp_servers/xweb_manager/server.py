@@ -5,83 +5,109 @@ import logging
 from typing import Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from mcp.server.fastapi import create_mcp_server
 from mcp.server import Server
+from mcp.server.sse import SseServerTransport
+import mcp.types as types
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("xweb_mcp")
 
 # --- Security ---
-# Ensure only the Core Backend can call this MCP server
 INTERNAL_API_KEY = os.environ.get("MCP_INTERNAL_API_KEY", "dev-secure-mcp-key-123")
 
-async def verify_internal_key(request: Request):
-    """
-    Dependency to verify internal API key in headers.
-    """
-    api_key_header = request.headers.get("X-API-Key")
-    if not api_key_header or api_key_header != INTERNAL_API_KEY:
-        logger.warning("Unauthorized access attempt to Xweb MCP Server")
-        raise HTTPException(status_code=403, detail="Forbidden: Invalid Internal API Key")
-    return api_key_header
+# --- MCP Server Initializing ---
+mcp = Server("xweb_manager")
 
 # --- MCP Tool Schemas ---
 class CreateXwebParams(BaseModel):
     business_type: str = Field(description="The type of business (e.g., 'ecommerce', 'blog', 'portfolio')")
     theme_color: str = Field(description="Primary hex color or descriptive color string")
     admin_email: str = Field(description="Email address for the initial admin account")
+
+@mcp.list_tools()
+async def handle_list_tools() -> list[types.Tool]:
+    """List available tools."""
+    return [
+        types.Tool(
+            name="create_xweb_instance",
+            description="Simulates provisioning a new Xweb website instance.",
+            inputSchema=CreateXwebParams.model_json_schema()
+        )
+    ]
+
+@mcp.call_tool()
+async def handle_call_tool(name: str, arguments: dict | None) -> list[types.TextContent]:
+    """Handle tool calls."""
+    if name == "create_xweb_instance":
+        if not arguments:
+            raise ValueError("Missing arguments for create_xweb_instance")
+        
+        params = CreateXwebParams(**arguments)
+        logger.info(f"Creating Xweb instance for {params.admin_email}")
+        
+        await asyncio.sleep(3) # Simulate loading
+        mock_domain = f"{params.business_type}-{uuid.uuid4().hex[:6]}.company-xweb.com"
+        
+        result_json = {
+            "status": "success",
+            "url": f"https://{mock_domain}",
+            "admin_email": params.admin_email
+        }
+        
+        return [types.TextContent(type="text", text=str(result_json))]
+        
+    raise ValueError(f"Unknown tool: {name}")
+
+# --- SSE Transport Logic ---
+sse_transport = SseServerTransport("/messages")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # This runs the MCP server in the background
+    async def run_mcp():
+        async with mcp.run_all_transports() as loop:
+            await loop
     
-# --- Server Setup ---
+    # We don't block here, but we could use background task if needed
+    # In standard SSE, we handle connect/message differently
+    yield
+
 app = FastAPI(title="Xweb Manager MCP Server")
 
-# Initialize MCP Server instance
-mcp = Server("xweb_manager")
-
-@mcp.tool("create_xweb_instance")
-async def create_xweb_instance(params: CreateXwebParams) -> str:
+# --- Routes for SSE ---
+@app.get("/sse")
+async def sse_connect(request: Request):
     """
-    Simulates the heavy, external process of provisioning a new Xweb website instance.
-    Uses asyncio.sleep to simulate network latency and returns a mock domain URL.
+    Initiates the SSE connection.
+    Security: Checked via Middleware below.
     """
-    logger.info(f"Received request to create Xweb instance for {params.admin_email} ({params.business_type})")
-    
-    # Simulate network latency and external system provisioning (fail-safe circuit breaker target)
-    await asyncio.sleep(3) 
-    
-    # Simulate success
-    mock_domain = f"{params.business_type}-{uuid.uuid4().hex[:6]}.company-xweb.com"
-    
-    result = {
-        "status": "success",
-        "message": "Xweb instance provisioned successfully.",
-        "url": f"https://{mock_domain}",
-        "admin_email": params.admin_email,
-        "theme": params.theme_color
-    }
-    
-    return str(result)
+    async with sse_transport.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
+        await mcp.run(
+            read_stream,
+            write_stream,
+            mcp.create_initialization_options()
+        )
 
-# --- FastAPI Integration ---
-mcp_app = create_mcp_server(mcp)
+@app.post("/messages")
+async def handle_messages(request: Request):
+    """
+    Handles incoming messages from the client.
+    """
+    await sse_transport.handle_post_message(request.scope, request.receive, request._send)
 
-# Mount MCP endpoints with the security dependency
-app.mount("/sse", mcp_app, name="mcp_sse")
-
-# Example of how the endpoints would be secured if Fastapi allowed dependency injection directly into mount:
-# Currently, create_mcp_server handles its own routing. To strictly secure it via FastAPI, 
-# we use a middleware to intercept all requests to /sse.
+# --- Security Middleware ---
 @app.middleware("http")
 async def enforce_api_key_middleware(request: Request, call_next):
-    if request.url.path.startswith("/sse"):
+    # Protect both connection and message endpoints
+    if request.url.path in ["/sse", "/messages"]:
         api_key_header = request.headers.get("X-API-Key")
         if not api_key_header or api_key_header != INTERNAL_API_KEY:
-            logger.warning("Unauthorized access attempt to Xweb MCP Server")
-            from fastapi.responses import JSONResponse
-            return JSONResponse(status_code=403, content={"detail": "Forbidden: Invalid Internal API Key"})
-    response = await call_next(request)
-    return response
+            logger.warning("Unauthorized access to Xweb MCP Server")
+            return JSONResponse(status_code=403, content={"detail": "Forbidden"})
+    return await call_next(request)
 
 @app.get("/health")
 async def health_check():
@@ -89,5 +115,4 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    # Typically run behind a Docker network, bound to 0.0.0.0
     uvicorn.run(app, host="0.0.0.0", port=8002)

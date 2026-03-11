@@ -1,6 +1,8 @@
 import pytest
 import jwt
 import os
+import sys
+sys.path.append(os.getcwd())
 from datetime import datetime, timedelta
 from cryptography.hazmat.primitives import serialization
 from app.middleware.auth import verify_jwt_token  # Adjusted import from root
@@ -19,11 +21,13 @@ def get_mock_keys():
         
     return private_key, public_key
 
-def create_mock_token(user_id="test_user", expires_in=3600):
+def create_mock_token(user_id="test_user", expires_in=3600, name="Test User", role="admin"):
     private_key, _ = get_mock_keys()
     
     payload = {
         "sub": user_id,
+        "name": name,
+        "role": role,
         "exp": datetime.utcnow() + timedelta(seconds=expires_in),
         "iat": datetime.utcnow()
     }
@@ -43,6 +47,8 @@ async def test_valid_jwt_token():
     decoded = jwt.decode(valid_token, public_key, algorithms=["RS256"])
     
     assert decoded["sub"] == "user_123"
+    assert decoded["name"] == "Test User"
+    assert decoded["role"] == "admin"
     assert "exp" in decoded
 
 @pytest.mark.asyncio

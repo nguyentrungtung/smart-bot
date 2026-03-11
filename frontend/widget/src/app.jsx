@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'preact/hooks';
-import { MessageCircle, X } from 'lucide-preact';
+import { useState, useEffect, useRef } from 'preact/hooks';
+
+import { MessageCircle, X, Maximize2, Minimize2 } from 'lucide-preact';
 import { socketService } from './services/socket';
 import { iframeSync } from './services/iframeSync';
 import { MessageList } from './components/MessageList';
@@ -11,36 +12,99 @@ export function App() {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [currentThoughts, setCurrentThoughts] = useState([]);
+  const [currentThought, setCurrentThought] = useState("");
+  const [partialResponse, setPartialResponse] = useState("");
+  const partialRef = useRef(""); // Latest value for the complete callback
+  const thoughtRef = useRef(""); // Accumulates thought chunks as one string
+
+
+
+  const [session_id] = useState("session-" + Math.random().toString(36).substring(7));
+
+  const [authError, setAuthError] = useState(false);
+  const [capabilities, setCapabilities] = useState({ vision: false, audio: false });
 
   useEffect(() => {
     // 1. Start reporting height to parent for dynamic resize
     iframeSync.startResizing();
 
-    // 2. Listen for auth tokens from parent site
+    // 2. Setup Auth Error handling
+    socketService.onAuthFailure = () => {
+      setAuthError(true);
+      setMessages((prev) => [...prev, {
+        sender: 'bot',
+        text: "⚠️ Session expired. Please refresh the page or login again from the main site."
+      }]);
+    };
+
+    // 3. Listen for auth tokens from parent site
     iframeSync.listenForEvents((type, payload) => {
       if (type === "auth") {
         console.log("Received JWT Auth via postMessage");
+        setAuthError(false);
         socketService.connect(payload);
       }
     });
 
-    // 3. Fallback for local development if no postMessage is sent
-    const mockToken = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy";
-    setTimeout(() => {
-      if (!socketService.socket) {
-        socketService.connect(mockToken);
+    // 4. Standalone/First-load Auto Login
+    const fetchGuestToken = async () => {
+      const url = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+      try {
+        const response = await fetch(`${url}/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: "guest-" + Math.random().toString(36).substring(7) })
+        });
+        if (response.ok) {
+          const data = await response.json();
+          console.log("Acquired Guest Token for development");
+          socketService.setTokens(data.access_token, data.refresh_token);
+          socketService.connect();
+        }
+      } catch (err) {
+        console.error("Failed to fetch guest token:", err);
       }
-    }, 1000);
+    };
 
-    socketService.on("message", (data) => {
-      setMessages((prev) => [...prev, { sender: 'bot', text: data.content }]);
+    // Attempt auto-connect or auto-login
+    if (socketService.accessToken) {
+      socketService.connect();
+    } else {
+      fetchGuestToken();
+    }
+
+    socketService.on("message_stream", (data) => {
+      console.log("FE Debug: Received message_stream chunk:", data.chunk);
+      partialRef.current += data.chunk;
+      setPartialResponse(partialRef.current);
       setLoading(false);
-      setCurrentThoughts([]); // Clear thoughts when final message arrives
     });
 
-    socketService.on("thinking", (data) => {
-      setCurrentThoughts((prev) => [...prev, data.content]);
+    socketService.on("thought_stream", (data) => {
+      console.log("FE Debug: Received thought_stream:", data.content);
+      thoughtRef.current += data.content;
+      setCurrentThought(thoughtRef.current);
+      setLoading(false);
+    });
+
+    socketService.on("message_complete", () => {
+      console.log("FE Debug: Stream complete. Finalizing message:", partialRef.current);
+      if (partialRef.current || thoughtRef.current) {
+        const finalContent = partialRef.current;
+        const finalThinking = thoughtRef.current;
+        setMessages((prev) => [...prev, { sender: 'bot', text: finalContent, thinking: finalThinking || null }]);
+      }
+      partialRef.current = "";
+      thoughtRef.current = "";
+      setPartialResponse("");
+      setLoading(false);
+      setCurrentThought("");
+    });
+
+    // Listen for multimodal capabilities from backend
+    socketService.on("multimodal_config", (config) => {
+      console.log("FE Debug: Received multimodal_config:", config);
+      setCapabilities(config);
     });
 
     // Handle incoming audio for TTS
@@ -51,10 +115,21 @@ export function App() {
       audio.play().catch(e => console.error("TTS Playback failed:", e));
     });
 
+
     return () => socketService.disconnect();
   }, []);
 
-  const handleSendMessage = (text, attachments = {}) => {
+  // Helper: convert Blob to base64 data URL
+  const blobToBase64 = (blob) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  };
+
+  const handleSendMessage = async (text, attachments = {}) => {
     const userMsg = {
       sender: 'user',
       text: text || (attachments.audio ? "🎤 Audio message" : "📸 Image message"),
@@ -64,41 +139,134 @@ export function App() {
     setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
 
+    // Build payload with proper format for backend
     const payload = {
-      session_id: "test-session-123",
+      session_id,
       content: text,
-      ...attachments
     };
+
+    // Add image as data URL string (already base64 from FileReader)
+    if (attachments.image) {
+      payload.image = attachments.image;
+      console.log("FE Debug: Attaching image to payload, length:", attachments.image.length);
+    }
+
+    // Convert audio Blob to base64 data URL before sending
+    if (attachments.audio && attachments.audio instanceof Blob) {
+      try {
+        const audioBase64 = await blobToBase64(attachments.audio);
+        payload.audio = audioBase64;
+        console.log("FE Debug: Converted audio Blob to base64, length:", audioBase64.length);
+      } catch (err) {
+        console.error("FE Error: Failed to convert audio Blob:", err);
+      }
+    }
+
+    console.log(`--- [FE_SOCKET] Sending Message ---
+    Text length: ${text?.length || 0}
+    Image present: ${!!attachments.image} (${attachments.image?.length || 0} chars)
+    Audio present: ${!!attachments.audio}
+    Payload Session: ${session_id}`);
 
     socketService.emit("message", payload);
   };
 
 
+  const [isMaximized, setIsMaximized] = useState(false);
+  const [dimensions, setDimensions] = useState({ width: 400, height: 620 });
+  const [isResizing, setIsResizing] = useState(false);
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isResizing || isMaximized) return;
+
+      // Since widget is bottom-right, we calculate width/height based on top-left drag
+      // Find the parent distance from bottom right
+      const rect = document.querySelector('.chat-window')?.getBoundingClientRect();
+      if (!rect) return;
+
+      const newWidth = Math.max(320, window.innerWidth - e.clientX - 32); // 32 is roughly the margin
+      const newHeight = Math.max(400, window.innerHeight - e.clientY - 96);
+
+      setDimensions({ width: newWidth, height: newHeight });
+    };
+
+    const handleMouseUp = () => setIsResizing(false);
+
+    if (isResizing) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing, isMaximized]);
+
+  useEffect(() => {
+    // Notify parent about new dimensions whenever states change
+    const finalWidth = isMaximized ? 'calc(100vw - 4rem)' : `${dimensions.width}px`;
+    const finalHeight = isMaximized ? 'calc(100vh - 8rem)' : `${dimensions.height}px`;
+    iframeSync.reportResize(finalWidth, finalHeight);
+  }, [isMaximized, dimensions]);
+
+  const toggleMaximized = (e) => {
+    e.stopPropagation();
+    setIsMaximized(!isMaximized);
+  };
+
   const toggleWidget = () => setIsOpen(!isOpen);
 
   return (
-    <div className="widget-container">
+    <div className={`widget-container ${isMaximized ? 'maximized' : ''}`}>
       {isOpen && (
-        <div className="chat-window">
+        <div
+          className={`chat-window ${isMaximized ? 'maximized' : ''}`}
+          style={!isMaximized ? { width: `${dimensions.width}px`, height: `${dimensions.height}px` } : {}}
+        >
+          {/* Resize Handle - Top Left Corner */}
+          {!isMaximized && (
+            <div
+              className="resize-handle"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setIsResizing(true);
+              }}
+            />
+          )}
+
           <div className="chat-header">
             <div className="status-dot"></div>
             <h2>Smart-Bot Advisor</h2>
-            <button
-              className="icon-btn"
-              style={{ marginLeft: 'auto' }}
-              onClick={toggleWidget}
-            >
-              <X size={20} />
-            </button>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.25rem' }}>
+              <button
+                className="icon-btn"
+                onClick={toggleMaximized}
+                title={isMaximized ? "Restore" : "Maximize"}
+              >
+                {isMaximized ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+              </button>
+              <button
+                className="icon-btn"
+                onClick={toggleWidget}
+                title="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
           </div>
 
-          <MessageList messages={messages} />
-          <ThoughtStream thoughts={currentThoughts} />
+          <MessageList messages={messages} partialResponse={partialResponse} />
+
+          <ThoughtStream thought={currentThought} />
+
 
           <InputArea
             onSendMessage={handleSendMessage}
-            msgInProgress={loading}
+            msgInProgress={false}
+            capabilities={capabilities}
           />
+
         </div>
       )}
 

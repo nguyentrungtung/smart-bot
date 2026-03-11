@@ -37,6 +37,20 @@ class IframeSyncService {
     }
 
     /**
+     * Explicitly report a resize to the parent.
+     */
+    reportResize(width, height) {
+        window.parent.postMessage(
+            {
+                type: "SMART_BOT_RESIZE",
+                height,
+                width
+            },
+            "*"
+        );
+    }
+
+    /**
      * Listens for messages from the parent window (e.g., Auth tokens).
      */
     listenForEvents(onEvent) {

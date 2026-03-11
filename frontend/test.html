@@ -65,7 +65,8 @@
 
     <!-- The Iframe Wrapper -->
     <div id="smart-bot-container">
-        <iframe id="smart-bot-iframe" src="http://localhost:5173" title="Smart-Bot Advisor" allow="microphone"></iframe>
+        <iframe id="smart-bot-iframe" src="http://localhost:3000" title="Smart-Bot Advisor" allow="microphone"></iframe>
+
     </div>
 
     <script>
@@ -73,11 +74,11 @@
         const container = document.getElementById('smart-bot-container');
 
         // SECURITY: Whitelist the widget's origin
-        const WIDGET_ORIGIN = "http://localhost:5173";
+        const WIDGET_ORIGIN = "http://localhost:3000";
 
         // 1. Send Auth Token to Widget using postMessage
         window.onload = () => {
-            const mockJWT = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy_parent_token";
+            const mockJWT = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0X3VzZXJfMTIzIiwibmFtZSI6IlRlc3QgVXNlciIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3MzA0NzI5MCwiZXhwIjoxNzczMTMzNjkwfQ.u_O9ImtM142Z7DBKf8rvkLWa6ZIaVBLYNZ9hl_gsu5SMPMNjO0j3OfxzTva_fUzy-77Pt1DrwlOjnMbyvSVfAdA8j9EtEjU6zr5qTb6gB-a43BreL1fOn5DKZsoItqd6aFc6G6cTUZTQkhh3ILEQDMKBUs3-t_NEa74L38fDO32yNL3TcQAhRbAf9gZNJhTd1kvloCo69uSsptQ28Z-ZbsoACepvDPmBjsVpw_Mc8JOdMY-2ki3Gd2ZGuev2R5TkMjhWm-nq7gMPaNGsq7jbQmjPR7WzqkLBLz6CKO4K694flj0wY62n8odVGzoY6e8HJfrCubJywn0U1uKwMEbZeg";
 
             // Wait a bit for iframe to load before sending auth
             setTimeout(() => {
@@ -86,8 +87,9 @@
                     token: mockJWT
                 }, WIDGET_ORIGIN);
                 console.log("Sent Auth Token to Widget");
-            }, 1500);
+            }, 1000);
         };
+
 
         // 2. Listen for Resize Events from Widget
         window.addEventListener('message', (event) => {

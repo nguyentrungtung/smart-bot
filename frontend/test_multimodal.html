@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Smart-Bot Multimodal Test</title>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <style>
+        body { font-family: monospace; background: #1a1a2e; color: #0f0; padding: 20px; }
+        #log { white-space: pre-wrap; max-height: 600px; overflow: auto; border: 1px solid #333; padding: 10px; }
+        .pass { color: #0f0; }
+        .fail { color: #f00; }
+        .info { color: #0af; }
+        .warn { color: #fa0; }
+        button { margin: 5px; padding: 8px 15px; background: #333; color: #0f0; border: 1px solid #0f0; cursor: pointer; }
+        button:hover { background: #0f0; color: #000; }
+        h1 { color: #fff; }
+    </style>
+</head>
+<body>
+    <h1>Smart-Bot Multimodal Bypass Test</h1>
+    <div>
+        <button onclick="runTest1()">Test 1: Text Message (xin chao)</button>
+        <button onclick="runTest2()">Test 2: Image + Text (bypass test)</button>
+        <button onclick="runTest3()">Test 3: Image Only (no text)</button>
+        <button onclick="runAllTests()">Run All Tests</button>
+    </div>
+    <div id="log"></div>
+
+    <script>
+        const log = document.getElementById('log');
+        let socket = null;
+        let testResults = {};
+
+        function addLog(msg, cls = 'info') {
+            const now = new Date().toLocaleTimeString();
+            log.innerHTML += `<span class="${cls}">[${now}] ${msg}</span>\n`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        // 1. Login to get JWT token
+        async function getToken() {
+            addLog('Step 1: Getting JWT guest token...');
+            const res = await fetch('http://localhost:8000/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: 'test-' + Date.now() })
+            });
+            const data = await res.json();
+            addLog(`Token acquired: ${data.access_token.substring(0, 20)}...`, 'pass');
+            return data.access_token;
+        }
+
+        // 2. Connect socket
+        async function connectSocket(token) {
+            return new Promise((resolve, reject) => {
+                addLog('Step 2: Connecting Socket.IO...');
+                socket = io('http://localhost:8000', {
+                    auth: { token },
+                    reconnection: false
+                });
+
+                socket.on('connect', () => {
+                    addLog('Socket CONNECTED: ' + socket.id, 'pass');
+                });
+
+                socket.on('multimodal_config', (config) => {
+                    addLog(`Multimodal Config: vision=${config.vision}, audio=${config.audio}, model=${config.model_type}`, 'pass');
+                    resolve(config);
+                });
+
+                socket.on('connect_error', (err) => {
+                    addLog('CONNECTION ERROR: ' + err.message, 'fail');
+                    reject(err);
+                });
+
+                socket.on('message_stream', (data) => {
+                    addLog(`>> message_stream: "${data.chunk.substring(0, 80)}..."`, 'info');
+                });
+
+                socket.on('thought_stream', (data) => {
+                    addLog(`>> thought_stream: "${data.content.substring(0, 80)}..."`, 'warn');
+                });
+
+                socket.on('message_complete', (data) => {
+                    addLog(`>> message_complete for session: ${data.session_id}`, 'pass');
+                    if (window._testResolve) {
+                        window._testResolve();
+                        window._testResolve = null;
+                    }
+                });
+
+                socket.on('error', (data) => {
+                    addLog(`>> ERROR from server: ${data.detail}`, 'fail');
+                    if (window._testResolve) {
+                        window._testResolve();
+                        window._testResolve = null;
+                    }
+                });
+            });
+        }
+
+        function waitForResponse(timeoutMs = 30000) {
+            return new Promise((resolve) => {
+                window._testResolve = resolve;
+                setTimeout(() => {
+                    if (window._testResolve) {
+                        addLog('TIMEOUT waiting for response!', 'fail');
+                        window._testResolve = null;
+                        resolve();
+                    }
+                }, timeoutMs);
+            });
+        }
+
+        // Create a small test image (1x1 pixel JPEG)
+        function createTestImage() {
+            // Minimal 1x1 white pixel JPEG
+            const jpegB64 = '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMCwsKCwsM' +
+                'EA4QEA0OEQ4LEhMSExMHDg0TFBkVFBkSExL/2wBDAQMEBAUEBQkFBQkSDAsMEhISEhISEhISEhISEhIS' +
+                'EhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhL/wAARCAABAAEDASIAAhEBAxEB/8QAHwAA' +
+                'AQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEG' +
+                'E1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZ' +
+                'WmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJ' +
+                'ytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcI' +
+                'CQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLR' +
+                'ChYkNOEl8RcYI4Q/RFhIcEpJissNi4oJCkoaODU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0' +
+                'dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna' +
+                '4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD9U6KKKAv/2Q==';
+            return 'data:image/jpeg;base64,' + jpegB64;
+        }
+
+        // Tests
+        async function runTest1() {
+            addLog('\n=== TEST 1: Basic Text Message (xin chao) ===', 'info');
+            const sessionId = 'test-text-' + Date.now();
+            socket.emit('message', {
+                session_id: sessionId,
+                content: 'xin chao',
+                image: null,
+                audio: null
+            });
+            addLog('Sent text message: "xin chao"');
+            await waitForResponse();
+            addLog('=== TEST 1 COMPLETE ===\n', 'pass');
+        }
+
+        async function runTest2() {
+            addLog('\n=== TEST 2: Image + Text (BYPASS BUG TEST) ===', 'info');
+            addLog('This previously triggered bypass: "Xin loi, toi chua ro tai lieu nay..."', 'warn');
+            const sessionId = 'test-image-' + Date.now();
+            const testImage = createTestImage();
+            addLog(`Image data URL length: ${testImage.length} chars`);
+            
+            socket.emit('message', {
+                session_id: sessionId,
+                content: 'anh nay noi ve cai gi',
+                image: testImage,
+                audio: null
+            });
+            addLog('Sent image + text: "anh nay noi ve cai gi"');
+            await waitForResponse(45000);
+            addLog('=== TEST 2 COMPLETE ===\n', 'pass');
+        }
+
+        async function runTest3() {
+            addLog('\n=== TEST 3: Image Only (no text) ===', 'info');
+            const sessionId = 'test-imgonly-' + Date.now();
+            const testImage = createTestImage();
+            
+            socket.emit('message', {
+                session_id: sessionId,
+                content: '',
+                image: testImage,
+                audio: null
+            });
+            addLog('Sent image with empty text');
+            await waitForResponse(45000);
+            addLog('=== TEST 3 COMPLETE ===\n', 'pass');
+        }
+
+        async function runAllTests() {
+            try {
+                const token = await getToken();
+                await connectSocket(token);
+                
+                addLog('\n========================================', 'info');
+                addLog('Starting All Tests...', 'info');
+                addLog('========================================\n', 'info');
+
+                await new Promise(r => setTimeout(r, 1000));
+                await runTest1();
+                await new Promise(r => setTimeout(r, 2000));
+                await runTest2();
+                await new Promise(r => setTimeout(r, 2000));
+                await runTest3();
+
+                addLog('\n========================================', 'pass');
+                addLog('ALL TESTS COMPLETE', 'pass');
+                addLog('========================================', 'pass');
+            } catch (e) {
+                addLog('Test error: ' + e.message, 'fail');
+            }
+        }
+
+        // Auto-init on load
+        window.onload = async () => {
+            addLog('Smart-Bot Multimodal Bypass Test Page Loaded');
+            addLog('Click "Run All Tests" to start');
+        };
+    </script>
+</body>
+</html>

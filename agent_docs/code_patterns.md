@@ -1,32 +1,26 @@
 # Code Patterns & Strict Rules
 
 ## 1. Concurrency (Locking)
-- **Session Locking**: In `api/socket_handler.py`, any incoming message MUST generate a Redis Lock (`redis.lock(f"session_{session_id}", timeout=30)`). The `timeout=30` is **mandatory** to prevent zombie locks if the server crashes.
+- **Session Locking**: In `api/socket_handler.py`, any incoming message MUST generate a Redis Lock (`redis.lock(f"session_{session_id}", timeout=30, blocking_timeout=2)`). The `timeout=30` is **mandatory** to prevent zombie locks if the server crashes, and `blocking_timeout=2` minimizes blocked process queues during high concurrency workflows.
 ```python
 # REQUIRED BOILERPLATE: API Socket Handler
 async def handle_message(sid, data):
     session_id = data.get("session_id")
-    lock_key = f"lock:{session_id}"
-    
-    # timeout=30 is CRITICAL to prevent Zombie Locks
-    async with redis_client.lock(lock_key, timeout=30, blocking_timeout=2):
+    # Use session_lock from app.middleware.auth
+    async with session_lock(redis_client, session_id, timeout=30) as acquired:
+        if not acquired: return
         # ... process LangGraph stream ...
 ```
 
-## 2. Database Connection Management
-- **LangGraph Checkpointing**: Do NOT use `AsyncPostgresSaver.create()` blindly per request. 
-- You MUST initialize a global connection pool (`psycopg_pool.AsyncConnectionPool`) at app startup and pass this pool to the `MemorySaver`. Failure to pool connections will cause `FATAL: too many clients` crashes.
+## 2. Persistent Memory (PostgreSQL Checkpointer)
+- **Persistence Across Restarts**: To ensure the AI remembers past conversation turns even after a server restart, you MUST use `AsyncPostgresSaver` with a valid `thread_id`.
+- You MUST initialize a global connection pool (`psycopg_pool.AsyncConnectionPool`) at app startup and pass this pool to the saver.
 ```python
-# REQUIRED BOILERPLATE: main.py / lifespan
-from psycopg_pool import AsyncConnectionPool
+# REQUIRED BOILERPLATE: LangGraph Persistence
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-
-async def lifespan(app: FastAPI):
-    # Create Pool ONCE
-    async with AsyncConnectionPool(settings.DATABASE_URL, max_size=20) as pool:
-        app.state.pool = pool
-        app.state.checkpointer = AsyncPostgresSaver(pool)
-        yield
+# Initialize once in app lifespan
+checkpointer = AsyncPostgresSaver(pool)
+graph = workflow.compile(checkpointer=checkpointer)
 ```
 
 ## 3. RAG Search (pgvector)
@@ -44,7 +38,7 @@ LIMIT 5;
 ## 4. WebSocket Security
 - **Strict CORS**: Do NOT use `socketio.AsyncServer(cors_allowed_origins="*")`. This defeats the iframe isolation. The `cors_allowed_origins` must load a strict list of domains from the backend environment variables (`config.yaml`).
 - **Authentication**: Do NOT use HTTP Headers for WebSocket connection auth. Browser WebSockets drop them. Pass the JWT payload explicitly inside the `auth` object.
-- **JWT Signature (RS256)**: The project manages its own Authentication. The backend must generate an RSA keypair. It issues JWT tokens signed with the **Private Key**, and the `auth.py` middleware MUST use `PyJWT` with the `RS256` algorithm to decode the token using the corresponding **Public Key**.
+- **JWT Signature (RS256)**: The backend must generate an RSA keypair. It issues JWT tokens signed with the **Private Key** containing required metadata claims (`sub`, `name`, `role`). Expiration times must be dynamically driven implicitly via `.env` (`JWT_ACCESS_TOKEN_EXPIRE_MINUTES`). The `auth.py` middleware MUST use `PyJWT` with the `RS256` algorithm to decode the token using the corresponding **Public Key**.
 ```javascript
 // REQUIRED BOILERPLATE: Frontend Preact Widget
 import { io } from "socket.io-client";
@@ -90,3 +84,20 @@ window.addEventListener("message", (event) => {
 ## 9. RAGFlow Data Synchronization (Celery Cron)
 - **Nightly Sync Job**: You must utilize Celery's `beat_schedule` to trigger the vector synchronization task nightly (e.g., at 2 AM). 
 - **Pagination**: When pulling from RAGFlow's REST API into PostgreSQL `pgvector`, the Celery worker MUST use pagination to prevent Out-Of-Memory (OOM) crashes on large datasets.
+
+## 10. Real-time Streaming & Tool Calls
+- **Streaming Handlers**: The AI generation node MUST utilize `litellm.acompletion` with `stream=True`. 
+- **Token Parsing Workflow**: To prevent `<thinking>` tags and raw JSON arguments from leaking visually into standard message channels, the node MUST act as a **Stateful Token Parser**.
+  - Accumulate partial `tool_calls` iteratively across stream chunks (`tc.index`, `tc.id`, `tc.function.arguments`).
+  - Scan buffers for explicit delimiters (`<thinking>...</thinking>`).
+  - Actively emit `message_stream` for final text output, and `thought_stream` exclusively for filtered reasoning blocks using `sio.emit()` mapped back to the active LangGraph thread context.
+
+## 12. Multimodal Processing (Image & Voice)
+- **Native Data Flow**: For models like Gemini 2.5-flash, send media as `base64` fragments inside the content array. Use `app/multimodal/processor.py` to standardize FE payloads into LiteLLM blocks.
+- **Auto-Detection**: Use `app/multimodal/capabilities.py` to toggle UI features based on the model name.
+- **CRITICAL**: When converting `HumanMessage` to LiteLLM payload in `generate.py`, DO NOT use `str(msg.content)` if it is a list (multimodal). Pass the list as-is.
+
+## 13. UI Aesthetics & Responsiveness
+- **Theme**: Stick to the professional "White/Blue" theme. Avoid generic colors.
+- **Thinking Blocks**: Thinking blocks (`<thinking>`) must be permanent and collapsible in the chat history to allow users to audit the AI's logic at any time.
+- **Resizing**: Always implement a flexible resize handle and a Maximize toggle to ensure the widget is accessible across different parent site layouts.

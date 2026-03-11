@@ -1,67 +1,57 @@
 import subprocess
 import sys
-import time
 import os
+import time
 
-def run_command(command, description, exit_on_fail=True):
-    print(f"\n[{time.strftime('%H:%M:%S')}] ⏳ {description}...")
-    print(f"    > {command}")
-    
-    # We use shell=True to allow for cross-platform execution (Windows/Linux)
-    process = subprocess.Popen(
-        command, 
-        shell=True, 
-        stdout=sys.stdout,
-        stderr=sys.stderr
-    )
-    process.communicate()
-    
-    if process.returncode != 0:
-        print(f"\n❌ ERROR: '{description}' failed with exit code {process.returncode}.")
-        if exit_on_fail:
-            sys.exit(process.returncode)
-    else:
-        print(f"✅ SUCCESS: {description}")
-
-def main():
-    print("==================================================")
-    print("🚀 Smart-Bot Automated Test Runner (Clean Slate) 🚀")
-    print("==================================================\n")
-    
-    # Ensure we are in the project root
-    if not os.path.exists("docker-compose.yml"):
-        print("❌ ERROR: Must run this script from the project root (where docker-compose.yml is).")
+def run_command(command, cwd=None):
+    """
+    Helper to run a system command and print output.
+    """
+    print(f"\n> Running: {command}", flush=True)
+    result = subprocess.run(command, shell=True, cwd=cwd)
+    if result.returncode != 0:
+        print(f"Error: Command failed with exit code {result.returncode}", flush=True)
         sys.exit(1)
 
-    # 1. Teardown
-    run_command("docker-compose down -v", "Tearing down existing containers and volumes")
-    
-    # 2. Rebuild strictly without cache
-    run_command("docker-compose build --no-cache", "Rebuilding Docker images without cache")
-    
-    # 3. Spin up infrastructure + backend in detached mode
-    run_command("docker-compose --profile backend up -d", "Spinning up infrastructure (Postgres, Redis, Backend)")
-    
-    # 4. Wait for Database to be ready (Primitive wait, can be enhanced with tenacity later)
-    print("\n⏳ Waiting 15 seconds for PostgreSQL and Redis to initialize...")
-    time.sleep(15)
-    
-    # 5. Run Alembic Migrations
-    run_command("docker-compose exec core_backend alembic upgrade head", "Running Alembic Database Migrations")
-    
-    # 6. Run Database Seeder
-    run_command("docker-compose exec core_backend python scripts/seed.py", "Seeding Mock Database (UserProfiles & RAG Vectors)")
-    
-    # 7. Execute Pytest Suite
-    print("\n==================================================")
-    print("🧪 Executing Pytest Scenario Suite 🧪")
-    print("==================================================")
-    run_command("docker-compose exec core_backend pytest -v tests/", "Running Pytest", exit_on_fail=False)
-    
-    print("\n==================================================")
-    print("🏁 Test Run Completed 🏁")
-    print("To keep the environment clean, you can run: docker-compose down -v")
-    print("==================================================")
+def main():
+    """
+    Master script to automate Docker teardown, rebuild, and pytest.
+    Ensures a clean, reproducible state for integration testing.
+    """
+    print("=== Smart-Bot Full-Stack Clean Test Suite ===", flush=True)
+
+    # Profiles to include
+    profiles = "--profile infra --profile backend --profile tools"
+
+    # 0. Generate JWT Keys if missing
+    print("\n[0/5] Ensuring JWT Keypair exists...", flush=True)
+    run_command("python scripts/generate_jwt_keys.py")
+
+    # 1. Teardown existing containers and volumes
+
+    print("\n[1/5] Tearing down environment...", flush=True)
+    run_command(f"docker-compose {profiles} down -v")
+
+    # 2. Rebuild and Start services in background
+    print("\n[2/5] Building and starting services...", flush=True)
+    run_command(f"docker-compose {profiles} up --build -d")
+
+    # 3. Wait for DB to be ready
+    print("\n[3/5] Waiting for services to initialize (30s)...", flush=True)
+    time.sleep(30) # High-quality PG and LiteLLM wait
+
+    # 4. Run Database Seeding
+    print("\n[4/5] Seeding database with mock RAG data...", flush=True)
+    run_command(f"docker-compose {profiles} exec core_backend python scripts/seed_db.py")
+
+    # 5. Execute Pytest Suites
+    print("\n[5/5] Executing automated test suites...", flush=True)
+    # Run both unit and scenario tests
+    run_command(f"docker-compose {profiles} exec core_backend pytest -v")
+
+
+    print("\n=== All Tests Passed Successfully! ===", flush=True)
 
 if __name__ == "__main__":
     main()
+

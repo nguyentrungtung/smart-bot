@@ -10,8 +10,11 @@ class GraphState(TypedDict):
     messages: Annotated[list[BaseMessage], operator.add]
     session_id: str
     user_id: str
+    # Holds RAG results
+    rag_documents: List[str]
     # Holds raw thinking process before final response is generated
     thinking: List[str]
     # Generic metadata for future extensions
     metadata: Dict[str, Any]
+
 

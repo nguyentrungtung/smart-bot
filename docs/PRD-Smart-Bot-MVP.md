@@ -19,8 +19,9 @@ Smart-Bot solves the bottleneck of product consultation and tedious manual workf
 2. **Employee Journey**: An employee logs into the internal portal, opens the Smart-Bot widget, and asks for the latest standard operating procedure for handling a CRM database migration. Smart-Bot instantly retrieves the precise document via vector search (RAG) and summarizes the steps.
 
 ## 6. MVP Core Features (Must-Haves)
-1. **Multimodal Chat Interface**: Full support for Text, Voice (Speech-to-Text and Text-to-Speech via Socket.IO), and Vision (Image upload and analysis via LLMs like GPT-4o).
-2. **Real-time Stream Parsing (<thinking>)**: The UI natively parses and hides the AI's internal reasoning loop inside an expandable "Thought Process" block to keep the chat clean.
+1. **Native Multimodal Chat**: Hỗ trợ đầy đủ Text, Voice (Native Audio qua Gemini) và Vision (Phân tích hình ảnh).
+2. **Persistent Agentic UI**: Giao diện hiển thị luồng suy nghĩ (`<thinking>`) dưới dạng khối cố định, có thể thu gọn/mở rộng trong lịch sử chat.
+3. **Resilient Window Management**: Widget hỗ trợ Maximize/Restore và thay đổi kích thước linh hoạt bằng tay nắm (Top-Left handle).
 3. **RAG Knowledge Lookup**: Deep native vector search utilizing PostgreSQL (`pgvector`) and RAGFlow to answer complex questions about products and internal documents.
 4. **Action Execution (External & Utility Integration)**: 
    - **Xweb Creation**: Functional MCP tool server for interfacing with the company's ecosystem.
@@ -44,8 +45,9 @@ Smart-Bot solves the bottleneck of product consultation and tedious manual workf
 - **Performance**: Must handle high Concurrent Users (CCU) effectively using asynchronous frameworks (Socket.IO, Celery) and scalable VPS infrastructure.
 
 ## 10. Definition of Done (MVP)
-- [ ] Widget successfully embedded via iframe on a staging website.
-- [ ] Users can chat using Text, Voice, or upload an Image, and receive accurate responses.
-- [ ] Backend properly parses `<thinking>` tags and streams them to an isolated UI component.
-- [ ] RAG pipeline correctly answers queries based on uploaded company documents.
-- [ ] The bot can successfully trigger a simulated or live "Create Xweb" action via an MCP server.
+- [x] Widget đã nhúng thành công qua iframe, hỗ trợ JWT Auth.
+- [x] Người dùng có thể chat Text, Voice (Native Audio) và gửi Ảnh.
+- [x] Backend bóc tách `<thinking>` tags và hiển thị cố định trong UI.
+- [x] Short-term memory được lưu vào PostgreSQL qua `AsyncPostgresSaver`.
+- [x] Giao diện White/Blue premium với khả năng phóng to/thu nhỏ và kéo giãn linh hoạt.
+- [x] Nâng cấp hệ thống lên Gemini 2.5-flash và refactor logic Multimodal tập trung.

@@ -1,9 +1,8 @@
 import pytest
-from unittest.mock import AsyncMock, patch
-
-from app.workflows.graph import agent_graph # Assuming actual graph compiles here
-from langchain_core.messages import HumanMessage
-from langchain_core.messages import ToolMessage
+import json
+from unittest.mock import AsyncMock, patch, MagicMock
+from app.workflows.graph import agent_graph 
+from langchain_core.messages import HumanMessage, ToolMessage, AIMessage
 
 @pytest.fixture
 def mock_weather_mcp():
@@ -22,29 +21,58 @@ def mock_time_mcp():
         "timezone": "Asia/Ho_Chi_Minh"
     }
 
+async def make_mock_stream(content="", tool_calls=None):
+    """Utility to create an async generator for LiteLLM stream response"""
+    class Chunk:
+        def __init__(self, content=None, tool_calls=None):
+            class Choice:
+                def __init__(self, delta):
+                    self.delta = delta
+            delta = MagicMock()
+            delta.content = content
+            delta.tool_calls = tool_calls
+            delta.reasoning_content = None
+            self.choices = [Choice(delta)]
+            
+    if tool_calls:
+        tcs = []
+        for i, tc in enumerate(tool_calls):
+            m_tc = MagicMock()
+            m_tc.index = i
+            m_tc.id = tc.get("id", f"call_{i}")
+            m_tc.function.name = tc["name"]
+            m_tc.function.arguments = json.dumps(tc["args"])
+            tcs.append(m_tc)
+        yield Chunk(tool_calls=tcs)
+    else:
+        yield Chunk(content=content)
+
 @pytest.mark.asyncio
 async def test_weather_mcp_routing(mock_weather_mcp):
     """Ensure the user's query about weather triggers the right tool"""
     
     user_input = HumanMessage(content="Thời tiết Hà Nội hôm nay thế nào?")
     
-    # Mocking the LiteLLM response to natively select the get_weather tool, then output text logic next round
-    mock_llm_response1 = AsyncMock()
-    mock_llm_response1.tool_calls = [{"name": "get_weather", "args": {"location": "Hanoi"}}]
+    # Mock LiteLLM Completion responses
+    tool_calls = [{"name": "get_weather", "args": {"location": "Hanoi"}}]
     
-    mock_llm_response2 = AsyncMock()
-    mock_llm_response2.tool_calls = []
-    mock_llm_response2.content = "Here is the weather in Hanoi..."
+    stream1 = make_mock_stream(tool_calls=tool_calls)
+    stream2 = make_mock_stream(content="Hà Nội đang nắng.")
     
-    with patch("app.workflows.nodes.generate.llm.ainvoke", side_effect=[mock_llm_response1, mock_llm_response2]):
+    with patch("app.workflows.nodes.generate.litellm.acompletion", side_effect=[stream1, stream2]):
         with patch("app.mcp_clients.basic_tools.get_weather", return_value=mock_weather_mcp):
-            
-            # The agent graph receives the message, routes to tool, grabs data and generates the final text
-            result_state = await agent_graph.ainvoke({"messages": [user_input]})
-    
-            # Should have the ToolMessage in history containing the JSON mock weather
-            assert any(isinstance(msg, ToolMessage) and msg.name == "get_weather" for msg in result_state["messages"])
-            assert '"location": "Hanoi"' in str(result_state["messages"])
+             # Mock dependencies to avoid DB calls
+            with patch("app.utils.db.pool", None):
+                with patch("app.workflows.nodes.rag_search.rag_search", return_value={"rag_documents": ["docs"]}):
+                    with patch("app.workflows.nodes.fetch_profile.fetch_profile", return_value={"metadata": {"profile": {}}}):
+                        with patch("app.workflows.nodes.profile_analyzer.profile_analyzer", return_value={}):
+
+                            result_state = await agent_graph.ainvoke({"messages": [user_input]})
+                    
+                            # Assertions
+                            messages = result_state["messages"]
+                            assert any(isinstance(msg, ToolMessage) and msg.name == "get_weather" for msg in messages)
+                            assert "Hà Nội" in messages[-1].content
 
 @pytest.mark.asyncio
 async def test_time_mcp_routing(mock_time_mcp):
@@ -52,21 +80,23 @@ async def test_time_mcp_routing(mock_time_mcp):
     
     user_input = HumanMessage(content="Bây giờ là mấy giờ rồi?")
     
-    # Mock LiteLLM selecting the time tool
-    mock_llm_response1 = AsyncMock()
-    mock_llm_response1.tool_calls = [{"name": "get_current_time", "args": {"timezone": "Asia/Ho_Chi_Minh"}}]
+    tool_calls = [{"name": "get_current_time", "args": {"timezone": "Asia/Ho_Chi_Minh"}}]
     
-    mock_llm_response2 = AsyncMock()
-    mock_llm_response2.tool_calls = []
-    mock_llm_response2.content = "It is 2026-03-09..."
+    stream1 = make_mock_stream(tool_calls=tool_calls)
+    stream2 = make_mock_stream(content="Bây giờ là 9 giờ 30 phút.")
     
-    with patch("app.workflows.nodes.generate.llm.ainvoke", side_effect=[mock_llm_response1, mock_llm_response2]):
+    with patch("app.workflows.nodes.generate.litellm.acompletion", side_effect=[stream1, stream2]):
         with patch("app.mcp_clients.basic_tools.get_current_time", return_value=mock_time_mcp):
-            
-            result_state = await agent_graph.ainvoke({"messages": [user_input]})
-            
-            tool_msg = next((msg for msg in result_state["messages"] if isinstance(msg, ToolMessage)), None)
-            
-            assert tool_msg is not None
-            assert tool_msg.name == "get_current_time"
-            assert "2026-03-09" in tool_msg.content
+            with patch("app.utils.db.pool", None):
+                with patch("app.workflows.nodes.rag_search.rag_search", return_value={"rag_documents": ["docs"]}):
+                    with patch("app.workflows.nodes.fetch_profile.fetch_profile", return_value={"metadata": {"profile": {}}}):
+                        with patch("app.workflows.nodes.profile_analyzer.profile_analyzer", return_value={}):
+
+                            result_state = await agent_graph.ainvoke({"messages": [user_input]})
+                            
+                            messages = result_state["messages"]
+                            tool_msg = next((msg for msg in messages if isinstance(msg, ToolMessage)), None)
+                            
+                            assert tool_msg is not None
+                            assert tool_msg.name == "get_current_time"
+                            assert "2026-03-09" in str(tool_msg.content)

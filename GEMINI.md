@@ -13,4 +13,5 @@ You are operating within the local terminal as the Gemini CLI agent for the **Sm
 - Enforce the MIME Type limit strictly in `schemas/validators.py`.
 - Secure the `postMessage` iframe loop securely with explicit string matching.
 - **Strict Authentication**: Always implement JWT parsing using `PyJWT`, `RS256` algorithms, and generated RSA Public/Private Key pairs. Do not use string `HS256` secrets.
+- **Multimodal Standard**: Always use the `app.multimodal` package (processor and capabilities) for handling images and audio. Do not use legacy utilities in `app.utils`.
 - **Do not** write tests that connect to production databases. Write mocks or use isolated docker test databases.

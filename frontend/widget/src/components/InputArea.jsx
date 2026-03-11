@@ -1,12 +1,23 @@
 import { useRef, useState, useEffect } from 'preact/hooks';
 import { Send, Image as ImageIcon, Mic, X, StopCircle } from 'lucide-preact';
 
-export function InputArea({ onSendMessage, msgInProgress }) {
+export function InputArea({ onSendMessage, msgInProgress, capabilities = {} }) {
     const textareaRef = useRef();
     const fileInputRef = useRef();
     const [isRecording, setIsRecording] = useState(false);
     const [selectedImage, setSelectedImage] = useState(null);
     const [mediaRecorder, setMediaRecorder] = useState(null);
+
+    const hasVision = capabilities.vision !== false;
+    const hasAudio = capabilities.audio !== false;
+
+    // Load limits from env or fallback to sane defaults
+    const maxImageMB = Number(import.meta.env.VITE_MAX_IMAGE_SIZE_MB) || 5;
+    const maxAudioMB = Number(import.meta.env.VITE_MAX_AUDIO_SIZE_MB) || 10;
+    const maxImageBytes = maxImageMB * 1024 * 1024;
+    const maxAudioBytes = maxAudioMB * 1024 * 1024;
+
+    console.log("FE Debug: InputArea capabilities:", capabilities, "vision:", hasVision, "audio:", hasAudio);
 
     const handleSend = () => {
         const text = textareaRef.current.value.trim();
@@ -27,10 +38,13 @@ export function InputArea({ onSendMessage, msgInProgress }) {
     const handleImageSelect = (e) => {
         const file = e.target.files[0];
         if (file) {
-            if (file.size > 5 * 1024 * 1024) {
-                alert("File quá lớn. Vui lòng chọn ảnh dưới 5MB.");
+            if (file.size > maxImageBytes) {
+                alert(`File quá lớn. Vui lòng chọn ảnh dưới ${maxImageMB}MB.`);
+                // Reset the input so that the same file could be selected again if it's compressed
+                if (fileInputRef.current) fileInputRef.current.value = "";
                 return;
             }
+            console.log("FE Debug: Image selected:", file.name, file.type, file.size);
             const reader = new FileReader();
             reader.onloadend = () => {
                 setSelectedImage(reader.result);
@@ -41,6 +55,7 @@ export function InputArea({ onSendMessage, msgInProgress }) {
 
     const startRecording = async () => {
         try {
+            console.log("FE Debug: Requesting microphone access...");
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             const recorder = new MediaRecorder(stream);
             const chunks = [];
@@ -48,15 +63,21 @@ export function InputArea({ onSendMessage, msgInProgress }) {
             recorder.ondataavailable = (e) => chunks.push(e.data);
             recorder.onstop = () => {
                 const blob = new Blob(chunks, { type: 'audio/webm' });
-                onSendMessage('', { audio: blob });
+                console.log("FE Debug: Recording complete, blob size:", blob.size);
+                if (blob.size > maxAudioBytes) {
+                    alert(`Ghi âm quá dài. Vui lòng ghi âm ngắn hơn (dưới ${maxAudioMB}MB).`);
+                } else {
+                    onSendMessage('', { audio: blob });
+                }
                 stream.getTracks().forEach(track => track.stop());
             };
 
             recorder.start();
             setMediaRecorder(recorder);
             setIsRecording(true);
+            console.log("FE Debug: Recording started");
         } catch (err) {
-            console.error("Microphone access denied:", err);
+            console.error("FE Error: Microphone access denied:", err);
             alert("Không thể truy cập Microphone.");
         }
     };
@@ -65,6 +86,7 @@ export function InputArea({ onSendMessage, msgInProgress }) {
         if (mediaRecorder) {
             mediaRecorder.stop();
             setIsRecording(false);
+            console.log("FE Debug: Recording stopped");
         }
     };
 
@@ -76,7 +98,7 @@ export function InputArea({ onSendMessage, msgInProgress }) {
                         <img src={selectedImage} style={{ width: '60px', height: '60px', borderRadius: '8px', objectFit: 'cover' }} />
                         <button
                             onClick={() => setSelectedImage(null)}
-                            style={{ position: 'absolute', top: '-5px', right: '-5px', background: 'red', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyCenter: 'center' }}
+                            style={{ position: 'absolute', top: '-5px', right: '-5px', background: 'red', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
                             <X size={12} />
                         </button>
@@ -93,22 +115,28 @@ export function InputArea({ onSendMessage, msgInProgress }) {
                     onChange={handleImageSelect}
                 />
 
-                <button
-                    className={`icon-btn ${selectedImage ? 'primary' : ''}`}
-                    onClick={() => fileInputRef.current.click()}
-                    title="Tải ảnh"
-                >
-                    <ImageIcon size={20} />
-                </button>
+                {/* Image button — only shown when vision is enabled */}
+                {hasVision && (
+                    <button
+                        className={`icon-btn ${selectedImage ? 'primary' : ''}`}
+                        onClick={() => fileInputRef.current.click()}
+                        title="Tải ảnh"
+                    >
+                        <ImageIcon size={20} />
+                    </button>
+                )}
 
-                <button
-                    className={`icon-btn ${isRecording ? 'recording' : ''}`}
-                    onClick={isRecording ? stopRecording : startRecording}
-                    title={isRecording ? "Dừng ghi" : "Ghi âm"}
-                    style={isRecording ? { color: '#ef4444' } : {}}
-                >
-                    {isRecording ? <StopCircle size={20} className="pulse" /> : <Mic size={20} />}
-                </button>
+                {/* Mic button — only shown when audio is enabled */}
+                {hasAudio && (
+                    <button
+                        className={`icon-btn ${isRecording ? 'recording' : ''}`}
+                        onClick={isRecording ? stopRecording : startRecording}
+                        title={isRecording ? "Dừng ghi" : "Ghi âm"}
+                        style={isRecording ? { color: '#ef4444' } : {}}
+                    >
+                        {isRecording ? <StopCircle size={20} className="pulse" /> : <Mic size={20} />}
+                    </button>
+                )}
 
                 <textarea
                     ref={textareaRef}

@@ -2,10 +2,11 @@
 
 ## Core Backend
 - **Language**: Python 3.11+
-- **Agent Orchestrator**: LangGraph
+- **Agent Orchestrator**: LangGraph (with Stateful Token Parser)
 - **API Framework**: FastAPI
 - **Real-Time Streaming**: `python-socketio` (AsyncServer)
-- **Model Router**: LiteLLM Proxy
+- **Model Router**: LiteLLM Proxy (Optimized for Gemini 2.5-flash & GPT-4o)
+- **Multimodal Support**: Native Image & Audio processing via `app/multimodal`
 - **Local Fallback**: LM Studio
 
 ## Data Layer
@@ -23,6 +24,10 @@
 - **Framework**: Preact
 - **Isolation**: Iframe embedded via parent `<script>` tag
 - **Communication**: 2-way `postMessage` (for Resize and Auth) + WebSockets (for Streaming)
+
+## Security & Authentication
+- **WebSocket Auth**: RS256 JWT via PyJWT (Public/Private Keypair)
+- **Session Integrity**: Redis Distributed Locks (Timeout & Blocking configurations)
 
 ## Infrastructure
 - **Orchestration**: Docker Compose

@@ -19,9 +19,12 @@ class Settings(BaseSettings):
     LITELLM_URL: str = "http://localhost:4000"
     LITELLM_KEY: str = "sk-litellm-proxy"
     LLM_MODEL: str = "lm-studio-model"
+    
+    # Multimodal: None=auto-detect from model, True=force on, False=force off
+    MULTIMODAL_ENABLED: bool | None = None
 
     # SocketIO CORS Origins
-    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173"]
     
     # MCP Security
     MCP_INTERNAL_API_KEY: str = "dev-secure-mcp-key-123"
@@ -30,8 +33,15 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = "" # If empty, HITL will mock approval output
     TELEGRAM_CHAT_ID: str = ""
 
+    # JWT Authentication
+    JWT_ALGORITHM: str = "RS256"
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
     # JWT Auth Keypair location (absolute path resolver)
-    KEYS_DIR: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".keys"))
+    KEYS_DIR: str = os.getenv("KEYS_DIR", "/app/.keys")
+
+
 
     class Config:
         env_file = ".env"
