@@ -5,7 +5,8 @@ Extracted from generate.py for cleanliness.
 
 # Keywords that allow bypassing the hallucination guard
 BYPASS_KEYWORDS = [
-    "thời tiết", "thoi tiet", "mấy giờ", "may gio", "ngày mấy",
+    "thời tiết", "thoi tiet", "mấy giờ", "may gio", "ngày mấy", "ngay may",
+    "ngày", "tháng", "năm", "giờ", "hôm nay", "bây giờ", "la sao", "là sao",
     "tạo xweb", "xweb",
     "xin chào", "xin chao", "hello", "hi", "chào",
 ]

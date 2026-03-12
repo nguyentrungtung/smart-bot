@@ -6,8 +6,8 @@ from app.utils.resilience import get_circuit_breaker
 
 logger = logging.getLogger(__name__)
 
-# Base internal URL for the docker-compose linked tools service
-XWEB_MCP_URL = "http://xweb_mcp:8002"
+# Use the unified MCP URL from settings
+XWEB_MCP_URL = settings.MCP_SERVER_URL
 
 # Initialize Circuit Breaker for Xweb
 xweb_circuit = get_circuit_breaker(
@@ -18,7 +18,7 @@ xweb_circuit = get_circuit_breaker(
 
 async def create_xweb_instance(business_type: str, theme_color: str, admin_email: str) -> Dict[str, Any]:
     """
-    Client talking to the Xweb Manager MCP Server.
+    Client talking to the Unified/Modular MCP Server.
     Wrapped in a Circuit Breaker to prevent long hangs during provisioning spikes.
     """
     async def _execute():

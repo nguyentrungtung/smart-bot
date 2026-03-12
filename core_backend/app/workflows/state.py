@@ -12,6 +12,8 @@ class GraphState(TypedDict):
     user_id: str
     # Holds RAG results
     rag_documents: List[str]
+    # Hybrid Memory: Cumulative summary of older messages
+    summary: str
     # Holds raw thinking process before final response is generated
     thinking: List[str]
     # Generic metadata for future extensions

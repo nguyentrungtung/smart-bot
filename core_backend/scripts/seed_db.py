@@ -31,6 +31,31 @@ async def seed():
             );
         """))
         
+        logger.info("Creating user profiles table...")
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS user_profiles (
+                user_id VARCHAR PRIMARY KEY,
+                name VARCHAR,
+                preferences JSONB DEFAULT '{}'::jsonb,
+                facts JSONB DEFAULT '[]'::jsonb,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """))
+        
+        logger.info("Creating chat interactions table for analytics and ratings...")
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS chat_interactions (
+                id SERIAL PRIMARY KEY,
+                session_id VARCHAR NOT NULL,
+                user_id VARCHAR,
+                socket_id VARCHAR,
+                role VARCHAR NOT NULL,
+                content TEXT NOT NULL,
+                rating VARCHAR(20) DEFAULT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """))
+        
         # Insert some sample product data
         sample_docs = [
             ("Sản phẩm Smart-Watch X1: Chống nước IP68, pin 10 ngày, giá 2.000.000 VNĐ.", [0.1] * 1536),

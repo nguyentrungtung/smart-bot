@@ -16,12 +16,12 @@ async def handle_message(sid, data):
 - **Persistence Across Restarts**: To ensure the AI remembers past conversation turns even after a server restart, you MUST use `AsyncPostgresSaver` with a valid `thread_id`.
 - You MUST initialize a global connection pool (`psycopg_pool.AsyncConnectionPool`) at app startup and pass this pool to the saver.
 ```python
-# REQUIRED BOILERPLATE: LangGraph Persistence
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 # Initialize once in app lifespan
 checkpointer = AsyncPostgresSaver(pool)
 graph = workflow.compile(checkpointer=checkpointer)
 ```
+- **Line-by-Line Interaction History**: You MUST log every single incoming user message and outgoing AI message (along with any UI ratings/feedback) into the `chat_interactions` table using `ChatHistoryTracker` within the API/Socket handlers. This ensures full traceability outside the blackbox of LangGraph's checkpointer.
 
 ## 3. RAG Search (pgvector)
 - **Cosine Operator**: When executing pgvector SQL queries in `nodes/rag_search.py`, YOU MUST use the Cosine Similarity operator (`<=>`).
@@ -59,13 +59,8 @@ const socket = io("https://api.domain.com", {
 - **Fail Open**: Inside `mcp_clients/` communicating with MCP servers (like Xweb creation), if the external HTTP request takes too long or fails, use a `try/except` Circuit Breaker pattern to immediately return an error dictionary to LangGraph, freeing up the connection thread rather than hanging indefinitely.
 
 ## 7. Database Migrations & Seeding
-- **Alembic Strictness**: Do NOT write pure SQL scripts to create tables or alter schema. You MUST define SQLAlchemy models in python and generate migration files using:
-```powershell
-# REQUIRED BOILERPLATE: Modifying DB Schema
-docker-compose exec core_backend alembic revision --autogenerate -m "added_new_table"
-docker-compose exec core_backend alembic upgrade head
-```
-- **Seeding Test Data**: Whenever you spin up a fresh DB container to test RAG or Memory workflows, you must write and execute `scripts/seed.py`. Do NOT manually insert data via `psql` shell. The seed script should use SQLAlchemy ORM to insert structured mock `UserProfiles` and `pgvector` embeddings natively.
+- **Alembic Strictness**: Do NOT write pure SQL scripts to create tables or alter schema in production. Make sure SQLAlchemy models are defined first.
+- **Seeding Test Data**: Whenever you spin up a fresh DB container to test workflows, you must write and execute `scripts/seed_db.py`. Do NOT manually insert data via `psql` shell. The seed script should use SQLAlchemy ORM/Core to create tables like `documents`, `user_profiles`, and `chat_interactions` and populate them natively.
 
 ## 8. Widget Security (postMessage XSS Prevention)
 - **Strict Origin Checking**: When listening for dynamic resize or JWT Auth messages from the parent window in the Preact app, you MUST explicitly verify the `event.origin`.

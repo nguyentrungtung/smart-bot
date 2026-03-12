@@ -105,8 +105,8 @@ class MultimodalProcessor:
             response = await litellm.atranscription(
                 model=getattr(settings, "STT_MODEL", "whisper-1"),
                 file=audio_file,
-                api_base=settings.LITELLM_URL,
-                api_key=settings.LITELLM_KEY
+                api_base=settings.LITELLM_API_BASE,
+                api_key=settings.LITELLM_API_KEY
             )
             return response.get("text", "")
         except Exception as e:

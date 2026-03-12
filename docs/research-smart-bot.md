@@ -153,13 +153,12 @@ core_backend/                         # Main Backend Service (FastAPI + Socket.I
 |   |                                 #   stream token ve frontend, xu ly multimodal upload (image/audio)
 |   |
 |   |-- config/                       # === SYSTEM CONFIGURATION ===
-|   |   |-- settings.py               # Pydantic BaseSettings: quan ly ENV (DB_URL, REDIS_URL, LITELLM_URL,
+|   |   |-- settings.py               # Pydantic BaseSettings: quan ly ENV (DB_URL, REDIS_URL, LITELLM_API_BASE,
 |   |                                 #   LLM_MODEL, EMBEDDING_MODEL, JWT keys)
 |   |
 |   |-- memory/                       # === DATA PERSISTENCE & USER PROFILES ===
-|   |   |-- long_term.py              # CRUD logic cho UserProfile table: luu ten, so thich, hanh vi
-|   |                                 #   cua khach hang. Duoc goi boi fetch_profile & profile_analyzer nodes.
-|   |
+|   |   |-- long_term.py              # CRUD logic cho UserProfile table: luu ten, so thich, hanh vi.
+|   |   |-- chat_history.py           # ChatHistoryTracker: logging tung doan chat tung le (chat_interactions) de phan tich, co tinh nang cho user vote rating (Good/Bad).
 |   |-- multimodal/                   # === MEDIA ENGINE (Vision & Audio) ===
 |   |   |-- processor.py              # Trung tam xu ly media: convert raw Base64/binary -> LangChain
 |   |   |                             #   HumanMessage content blocks (image_url, input_audio).
@@ -174,11 +173,9 @@ core_backend/                         # Main Backend Service (FastAPI + Socket.I
 |   |
 |   |-- utils/                        # === SHARED TECHNICAL UTILITIES ===
 |   |   |-- db.py                     # Database pool initializer & LangGraph PostgresSaver checkpointer.
-|   |   |                             #   Tao connection pool async cho tat ca module dung chung.
-|   |   |-- logger.py                 # Structured logging: format chuan cho debug (timestamp, module, level)
-|   |   |-- pii_mask.py               # Security: Regex scrub so dien thoai, email, password truoc khi
-|   |                                 #   gui data len Cloud LLM. Bao ve du lieu doanh nghiep.
-|   |
+|   |   |-- tokens.py                 # Utilities for token counting and estimation (LLM Context limit).
+|   |   |-- logger.py                 # Structured logging: format chuan cho debug (timestamp, module, level).
+|   |   |-- pii_mask.py               # Security: Regex scrub so dien thoai, email, password truoc khi gui data.
 |   |-- workflows/                    # === LANGGRAPH BRAIN (Core AI Architecture) ===
 |       |-- state.py                  # GraphState TypedDict: dinh nghia schema chung cho tat ca node
 |       |                             #   (messages, session_id, user_id, rag_documents, thinking, metadata)
@@ -267,49 +264,69 @@ To achieve an advanced UI where the AI's internal reasoning (e.g., "Thought for 
 
 ### 4.7 Docker Compose Snippet
 ```yaml
-version: '3.8'
 services:
   postgres:
     image: pgvector/pgvector:pg16
+    ports:
+      - "5432:5432"
     environment:
-      POSTGRES_USER: smartuser
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: smartbotdb
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
+      POSTGRES_DB: ${POSTGRES_DB:-smartsales}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    profiles: [ "infra", "backend" ]
 
   redis:
     image: redis:alpine
     ports:
       - "6379:6379"
+    profiles: [ "infra", "backend" ]
 
   litellm_proxy:
     image: ghcr.io/berriai/litellm:main-latest
+    ports:
+      - "4000:4000"
     volumes:
       - ./litellm_config.yaml:/app/config.yaml
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-    command: [ "--config", "/app/config.yaml", "--detailed_debug" ]
+      - GEMINI_API_KEY=${MY_GEMINI_KEY}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-litellm-proxy}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin}@postgres:5432/${POSTGRES_DB:-smartsales}
+    command: [ "--config", "/app/config.yaml" ]
+    depends_on:
+      - redis
+      - postgres
+    profiles: [ "infra", "backend" ]
 
   core_backend:
     build: ./core_backend
+    ports:
+      - "8000:8000"
+    env_file: .env
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin}@postgres:5432/${POSTGRES_DB:-smartsales}
       - REDIS_URL=redis://redis:6379/0
-      - LITELLM_URL=${LITELLM_API_BASE}
-      - LITELLM_API_KEY=${LITELLM_API_KEY}
-      - LLM_MODEL=${LLM_MODEL}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL}
+      - LITELLM_API_BASE=${LITELLM_API_BASE}
+      - LITELLM_API_KEY=${LITELLM_API_KEY:-sk-litellm-proxy}
+      - LLM_MODEL=${LLM_MODEL:-lm-studio-model}
+      - MCP_SERVER_URL=${MCP_SERVER_URL}
+      ...
     depends_on:
       - postgres
       - redis
       - litellm_proxy
+    profiles: [ "backend" ]
 
-  mcp_basic_tools:
-    build: ./mcp_servers/basic_tools
+  mcp_server:
+    build: ./mcp_servers
     ports:
       - "8001:8001"
+    env_file: .env
+    environment:
+      - MCP_INTERNAL_API_KEY=${MCP_INTERNAL_API_KEY}
+    profiles: [ "tools", "backend" ]
 
 volumes:
   pgdata:

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { marked } from 'marked';
-import { ChevronDown, ChevronUp, BrainCircuit } from 'lucide-preact';
+import { ChevronDown, ChevronUp, BrainCircuit, ThumbsUp, ThumbsDown } from 'lucide-preact';
 
 // Configure marked
 marked.setOptions({ breaks: true, gfm: true });
@@ -40,7 +40,7 @@ function SavedThinking({ thinking, thinkingTime }) {
     );
 }
 
-export function MessageList({ messages, partialResponse }) {
+export function MessageList({ messages, partialResponse, onRate }) {
     const listRef = useRef();
 
     useEffect(() => {
@@ -73,7 +73,31 @@ export function MessageList({ messages, partialResponse }) {
                             />
                         )}
                         {msg.sender === 'bot' ? (
-                            <div dangerouslySetInnerHTML={renderMarkdown(msg.text)} />
+                            <div className="bot-message-wrapper">
+                                <div dangerouslySetInnerHTML={renderMarkdown(msg.text)} />
+                                {msg.interaction_id && (
+                                    <div className="message-actions" style={{ display: 'flex', gap: '8px', marginTop: '8px', justifyContent: 'flex-end' }}>
+                                        <button
+                                            className={`rate-btn ${msg.rated === 'good' ? 'active' : ''}`}
+                                            onClick={() => onRate(msg.interaction_id, 'good')}
+                                            disabled={!!msg.rated}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: msg.rated === 'bad' ? 0.3 : 1 }}
+                                            title="Tốt"
+                                        >
+                                            <ThumbsUp size={14} color={msg.rated === 'good' ? '#22c55e' : '#64748b'} />
+                                        </button>
+                                        <button
+                                            className={`rate-btn ${msg.rated === 'bad' ? 'active' : ''}`}
+                                            onClick={() => onRate(msg.interaction_id, 'bad')}
+                                            disabled={!!msg.rated}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: msg.rated === 'good' ? 0.3 : 1 }}
+                                            title="Chưa tốt"
+                                        >
+                                            <ThumbsDown size={14} color={msg.rated === 'bad' ? '#ef4444' : '#64748b'} />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                         ) : (
                             msg.text
                         )}

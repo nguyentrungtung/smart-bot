@@ -69,9 +69,9 @@ def should_bypass(
     if is_whitelisted:
         return None
 
-    # If RAG failed and not whitelisted → block
-    rag_failed = metadata.get("rag_failed") or not rag_docs
-    if rag_failed:
+    # If RAG failed (explicitly marked by RAG node) and not whitelisted → block
+    rag_failed = metadata.get("rag_failed", False)
+    if rag_failed and not is_whitelisted:
         logger.warning(f"Guard: Bypass triggered for: {last_text[:30]}...")
         return AIMessage(
             content="Xin lỗi, tôi chưa rõ tài liệu này. "

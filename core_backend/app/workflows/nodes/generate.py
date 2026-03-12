@@ -37,9 +37,12 @@ async def generate_response(
     sio = config.get("configurable", {}).get("sio") if config else None
     sid = config.get("configurable", {}).get("sid") if config else None
 
+    print(f"--- [GENERATE NODE] --- sid={sid}, presence of sio={'YES' if sio else 'NO'}")
+
     messages = state.get("messages", [])
     metadata = state.get("metadata", {})
     rag_docs = state.get("rag_documents", [])
+    summary = state.get("summary", "")
 
     # ── 1. Guard: bypass check ────────────────────────────────
     fallback = should_bypass(messages, metadata, rag_docs)
@@ -51,6 +54,9 @@ async def generate_response(
 
     # ── 2. Build prompt context ───────────────────────────────
     context_str = f"User Profile: {metadata.get('profile', {})}"
+    if summary:
+        context_str += f"\n\nBản tóm tắt lịch sử cũ: {summary}"
+        
     rag_str = "\n".join(f"- {doc}" for doc in rag_docs)
     system_content = (
         SALES_SYSTEM_PROMPT
@@ -58,8 +64,21 @@ async def generate_response(
         .replace("{{rag_documents}}", rag_str)
     )
 
-    # ── 3. Convert messages ───────────────────────────────────
+    # ── 3. Convert messages & Token Trimming ──────────────────
+    # We only keep the most recent messages that fit in the window
+    # To keep it simple, we convert all and then slice the list
     litellm_messages = langchain_to_litellm(messages, system_content)
+    
+    # Token Trimming logic (Layer 4)
+    def count_est_tokens(msgs):
+        return sum(len(str(m.get("content", "")).split()) for m in msgs) * 1.3
+    
+    # Always keep system prompt (index 0) and the last N messages
+    while count_est_tokens(litellm_messages) > settings.MAX_HISTORY_TOKENS and len(litellm_messages) > 2:
+        # Remove the second message (index 1), preserve system prompt (index 0)
+        logger.info("TRIMMER: Removing one old message from context to fit window.")
+        litellm_messages.pop(1)
+
     has_multimodal = has_multimodal_user_message(litellm_messages)
 
     # Gemini 2.5 handles multimodal + tools + streaming perfectly
@@ -84,8 +103,8 @@ async def generate_response(
             messages=litellm_messages,
             tools=use_tools,
             tool_choice="auto" if use_tools else None,
-            api_base=settings.LITELLM_URL,
-            api_key=settings.LITELLM_KEY,
+            api_base=settings.LITELLM_API_BASE,
+            api_key=settings.LITELLM_API_KEY,
             custom_llm_provider="openai",  # Proxy speaks OpenAI protocol
             stream=should_stream,
         )
@@ -104,10 +123,11 @@ async def generate_response(
         return {"messages": [ai_msg]}
 
     except Exception as e:
-        logger.error(f"LiteLLM Error: {e}")
+        logger.error(f"LiteLLM Error caught in node: {e}")
         error_msg = _build_error_message(has_multimodal)
         if sio and sid:
             await sio.emit("message_stream", {"chunk": error_msg.content}, room=sid)
+            await sio.emit("message_complete", {"session_id": state.get("session_id")}, room=sid)
         return {"messages": [error_msg]}
 
 

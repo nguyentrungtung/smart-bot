@@ -2,8 +2,8 @@ model_list:
   # Chat Model
   - model_name: lm-studio-model
     litellm_params:
-      model: openai/local-model      # Name mappings for LM Studio
-      api_base: http://172.30.80.1:1234/v1 # Corrected to reported reachability
+      model: openai/local-model
+      api_base: http://host.docker.internal:1234/v1
       api_key: "lm-studio"
   - model_name: gpt-4o
     litellm_params:
@@ -19,7 +19,7 @@ model_list:
   - model_name: lm-studio-embedding
     litellm_params:
       model: openai/nomic-embed-text
-      api_base: http://172.30.80.1:1234/v1
+      api_base: http://host.docker.internal:1234/v1
       api_key: "lm-studio"
 
   - model_name: text-embedding-3-small

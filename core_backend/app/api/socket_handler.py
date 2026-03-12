@@ -10,7 +10,9 @@ from app.multimodal.processor import MultimodalProcessor
 from app.schemas.socket_io import MessageIn
 import jwt
 import redis.asyncio as redis
-from langchain_core.messages import HumanMessage
+from app.memory.chat_history import ChatHistoryTracker
+from app.utils.db import get_pool
+from langchain_core.messages import HumanMessage, AIMessage
 from contextlib import asynccontextmanager
 
 logger = logging.getLogger("socket_handler")
@@ -111,12 +113,33 @@ async def handle_message(sid, data):
             f"capabilities={capabilities}"
         )
 
+        async with sio.session(sid) as session:
+            user_id = session.get("user_id")
+
         inputs = {
             "messages": [HumanMessage(content=input_content)],
             "session_id": session_id,
+            "user_id": user_id,
             "thinking": [],
             "metadata": {}
         }
+
+        # 3.5 Log User Message for tracing
+        db_pool = get_pool()
+        history_tracker = ChatHistoryTracker(db_pool)
+        
+        user_msg_text = content
+        # If content is empty but we have an image, note it
+        if not user_msg_text and raw_img:
+            user_msg_text = "[Image Upload]"
+            
+        await history_tracker.log_interaction(
+            session_id=session_id,
+            role="user",
+            content=user_msg_text,
+            user_id=user_id,
+            socket_id=sid
+        )
 
         config = {
             "configurable": {
@@ -132,11 +155,30 @@ async def handle_message(sid, data):
             agent_graph = get_agent_graph()
             logger.info(f"MEMORY DEBUG: Invoking graph with thread_id={session_id}, input messages count={len(inputs['messages'])}")
             print(f"--- DEBUG SOCKET: Starting astream for {session_id} (thread_id={session_id}) ---")
+            final_state = {}
             async for chunk in agent_graph.astream(inputs, config, stream_mode="values"):
+                final_state = chunk
                 msg_count = len(chunk.get('messages', []))
                 print(f"--- DEBUG SOCKET: Yielded a chunk (total messages in state: {msg_count}) ---")
-                pass
             
+            # 5. Log Assistant Message
+            messages = final_state.get("messages", [])
+            if messages and isinstance(messages[-1], AIMessage):
+                ai_text = messages[-1].content
+                interaction_id = await history_tracker.log_interaction(
+                    session_id=session_id,
+                    role="assistant",
+                    content=ai_text,
+                    user_id=user_id,
+                    socket_id=sid
+                )
+                # Send the interaction_id to FE so it can rate this specific message
+                print(f"--- DEBUG SOCKET: Logged AI response, interaction_id={interaction_id} ---")
+                await sio.emit('message_metadata', {
+                    'session_id': session_id,
+                    'interaction_id': interaction_id
+                }, room=sid)
+
             print(f"--- DEBUG SOCKET: Finished astream, emitting message_complete ---")
             await sio.emit('message_complete', {'session_id': session_id}, room=sid)
 
@@ -144,3 +186,18 @@ async def handle_message(sid, data):
         except Exception as e:
             logger.error(f"Graph execution error: {str(e)}")
             await sio.emit('error', {'detail': 'An error occurred during generation.'}, room=sid)
+
+@sio.on("message_rate")
+async def handle_rating(sid, data):
+    """
+    Handles user feedback (good/bad) for a specific AI response.
+    """
+    interaction_id = data.get("interaction_id")
+    rating = data.get("rating") # 'good' or 'bad'
+    
+    if interaction_id and rating:
+        db_pool = get_pool()
+        history_tracker = ChatHistoryTracker(db_pool)
+        await history_tracker.rate_interaction(interaction_id, rating)
+        logger.info(f"SOCKET: Interaction {interaction_id} rated as {rating}")
+        await sio.emit('rate_success', {'interaction_id': interaction_id}, room=sid)

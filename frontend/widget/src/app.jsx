@@ -16,10 +16,17 @@ export function App() {
   const [partialResponse, setPartialResponse] = useState("");
   const partialRef = useRef(""); // Latest value for the complete callback
   const thoughtRef = useRef(""); // Accumulates thought chunks as one string
+  const [pendingMetadata, setPendingMetadata] = useState(null);
 
 
 
-  const [session_id] = useState("session-" + Math.random().toString(36).substring(7));
+  const [session_id] = useState(() => {
+    const saved = localStorage.getItem("smart_bot_session_id");
+    if (saved) return saved;
+    const newId = "session-" + Math.random().toString(36).substring(7);
+    localStorage.setItem("smart_bot_session_id", newId);
+    return newId;
+  });
 
   const [authError, setAuthError] = useState(false);
   const [capabilities, setCapabilities] = useState({ vision: false, audio: false });
@@ -92,13 +99,27 @@ export function App() {
       if (partialRef.current || thoughtRef.current) {
         const finalContent = partialRef.current;
         const finalThinking = thoughtRef.current;
-        setMessages((prev) => [...prev, { sender: 'bot', text: finalContent, thinking: finalThinking || null }]);
+        const interaction_id = pendingMetadata?.interaction_id || null;
+
+        setMessages((prev) => [...prev, {
+          sender: 'bot',
+          text: finalContent,
+          thinking: finalThinking || null,
+          interaction_id: interaction_id,
+          rated: null
+        }]);
       }
       partialRef.current = "";
       thoughtRef.current = "";
       setPartialResponse("");
       setLoading(false);
       setCurrentThought("");
+      setPendingMetadata(null);
+    });
+
+    socketService.on("message_metadata", (data) => {
+      console.log("FE Debug: Received message_metadata:", data);
+      setPendingMetadata(data);
     });
 
     // Listen for multimodal capabilities from backend
@@ -169,6 +190,16 @@ export function App() {
     Payload Session: ${session_id}`);
 
     socketService.emit("message", payload);
+  };
+
+  const handleRateMessage = (interaction_id, rating) => {
+    console.log(`FE Debug: Rating interaction ${interaction_id} as ${rating}`);
+    socketService.emit("message_rate", { interaction_id, rating });
+
+    // Update local state to show it was rated
+    setMessages((prev) => prev.map(m =>
+      m.interaction_id === interaction_id ? { ...m, rated: rating } : m
+    ));
   };
 
 
@@ -256,7 +287,11 @@ export function App() {
             </div>
           </div>
 
-          <MessageList messages={messages} partialResponse={partialResponse} />
+          <MessageList
+            messages={messages}
+            partialResponse={partialResponse}
+            onRate={handleRateMessage}
+          />
 
           <ThoughtStream thought={currentThought} />
 

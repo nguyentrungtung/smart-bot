@@ -16,8 +16,8 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # LiteLLM
-    LITELLM_URL: str = "http://localhost:4000"
-    LITELLM_KEY: str = "sk-litellm-proxy"
+    LITELLM_API_BASE: str = "http://localhost:4000"
+    LITELLM_API_KEY: str = "sk-litellm-proxy"
     LLM_MODEL: str = "lm-studio-model"
     
     # Multimodal: None=auto-detect from model, True=force on, False=force off
@@ -27,7 +27,12 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173"]
     
     # MCP Security
+    MCP_SERVER_URL: str = "http://localhost:8001"
     MCP_INTERNAL_API_KEY: str = "dev-secure-mcp-key-123"
+
+    # Memory Settings (Hybrid)
+    MAX_HISTORY_TOKENS: int = 4000  # Strict limit for LM Studio window
+    SUMMARY_THRESHOLD: int = 2000   # Trigger summarization above this token count
 
     # Telegram HITL
     TELEGRAM_BOT_TOKEN: str = "" # If empty, HITL will mock approval output
