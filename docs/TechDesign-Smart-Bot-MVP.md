@@ -5,8 +5,9 @@ Smart-Bot is built using a decoupled, highly concurrent microservices architectu
 - **Core AI Engine**: LangGraph orchestrates complex, cyclical Agent logic and natively manages state.
 - **Model Gateway**: LiteLLM sits as an HTTP/REST proxy between the Backend and models, prioritizing local models (LM Studio) and failing over to OpenAI.
 - **Data Engine**: A standalone Open Source solution, RAGFlow, runs on a completely separate server for specialized data ingestion, chunking, and evaluation. Once vectors are tested and approved in RAGFlow, a nightly Celery Cronjob synchronizes the high-quality embeddings into the core backend's centralized PostgreSQL instance using the `pgvector` extension.
-- **External Tooling**: External system interactions (like Xweb creation) are entirely decoupled into independent Model Context Protocol (MCP) servers using the official Python SDK.
-  - **Internal Security**: These MCP servers do *not* expose public endpoints. They strictly require an `Internal API Key` passed in the headers to accept connections, ensuring that only the official Core Backend can trigger tool executions.
+- **External Tooling**: External system interactions (like Xweb creation) are decoupled into independent Model Context Protocol (MCP) servers. The backend uses a unified **Resilience MCP Client** with a built-in circuit breaker to handle all external communication.
+- **Local Tooling**: Simple, logic-only tools (Time, File operations, User Profile DB updates) are executed directly in the backend using a specialized **Local Tools** connector to minimize network latency.
+- **Token Management**: Strict token counting and summarization logic is implemented to handle the smaller context windows of local models (e.g., LM Studio at 4096 tokens). The system uses an aggressive **Hybrid Memory** strategy (Summarization + Sliding Window) to prevent context overflows.
 
 ## 2. Alternative Options Considered
 - **Direct LLM Tooling vs. MCP**: *Considered* having the LLM directly call internal Python scripts. *Rejected* because it heavily couples the core AI engine to internal company software APIs. The chosen MCP standard allows language-agnostic, easily deployable microservice tools.

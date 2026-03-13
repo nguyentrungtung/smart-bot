@@ -1,6 +1,7 @@
 import socketio
 import logging
 import re
+from fastapi import HTTPException
 from app.config.settings import settings
 from app.middleware.auth import verify_jwt_token, session_lock
 from app.middleware.pii_scrubber import scrub_pii
@@ -9,7 +10,7 @@ from app.multimodal.capabilities import get_capabilities
 from app.multimodal.processor import MultimodalProcessor
 from app.schemas.socket_io import MessageIn
 import jwt
-import redis.asyncio as redis
+from app.utils.redis import get_redis
 from app.memory.chat_history import ChatHistoryTracker
 from app.utils.db import get_pool
 from langchain_core.messages import HumanMessage, AIMessage
@@ -26,16 +27,6 @@ sio = socketio.AsyncServer(
     engineio_logger=True
 )
 
-
-# Global Redis Client singleton pool to be initialized
-redis_pool = None
-
-async def get_redis():
-    global redis_pool
-    if redis_pool is None:
-        redis_pool = redis.from_url(settings.REDIS_URL, decode_responses=True)
-    return redis_pool
-
 @sio.event
 async def connect(sid, environ, auth):
     """
@@ -48,7 +39,7 @@ async def connect(sid, environ, auth):
         
     token = auth.get('token')
     try:
-        decoded = verify_jwt_token(token)
+        decoded = await verify_jwt_token(token)
         
         async with sio.session(sid) as session:
             session['user_id'] = decoded.get('sub')
@@ -62,9 +53,10 @@ async def connect(sid, environ, auth):
         
         return True
         
-    except jwt.PyJWTError:
-        logger.warning(f"Connection rejected: Invalid JWT token signature for {sid}")
+    except (jwt.PyJWTError, HTTPException):
+        logger.warning(f"Connection rejected: Invalid or blacklisted JWT token for {sid}")
         return False
+
         
 @sio.event
 async def disconnect(sid):

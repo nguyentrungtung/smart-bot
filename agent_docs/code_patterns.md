@@ -56,7 +56,13 @@ const socket = io("https://api.domain.com", {
 - **REST Sync**: You MUST push the conversation logs / `UserProfiles` sync exclusively via RAGFlow's official HTTP REST API.
 
 ## 6. Circuit Breakers (External Tools)
-- **Fail Open**: Inside `mcp_clients/` communicating with MCP servers (like Xweb creation), if the external HTTP request takes too long or fails, use a `try/except` Circuit Breaker pattern to immediately return an error dictionary to LangGraph, freeing up the connection thread rather than hanging indefinitely.
+- **Unified Resilience**: All external MCP tool calls MUST use the `app.connectors.mcp.client.call_mcp_tool` wrapper.
+- **Circuit Breaker**: This client utilizes a named circuit breaker (`mcp_resilience_client`). If the MCP server is down or timing out, the circuit will trip, immediately returning an error dict to LangGraph to prevent hanging the main execution thread.
+- **Fail Open**: LLM should be informed of the failure via the returned error dictionary so it can apologize gracefully or suggest an alternative.
+
+## 7. Local vs External Tools
+- **Split Responsibility**: Never call internal backend maintenance (Time, Files, User Profile updates) via MCP. These belong in `app.connectors.local_tools.py`.
+- **Registry**: Both local and external tools are managed via the unified `execute_tools` node. Any tool NOT specified in the `LOCAL_TOOL_REGISTRY` will be automatically routed to the MCP client.
 
 ## 7. Database Migrations & Seeding
 - **Alembic Strictness**: Do NOT write pure SQL scripts to create tables or alter schema in production. Make sure SQLAlchemy models are defined first.

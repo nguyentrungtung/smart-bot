@@ -2,7 +2,7 @@ import logging
 from langgraph.graph import StateGraph, START, END
 from app.workflows.state import GraphState
 from app.workflows.nodes.generate import generate_response
-from app.workflows.nodes.tools import execute_basic_tools, execute_xweb_tool
+from app.workflows.nodes.tools import execute_tools
 from app.workflows.nodes.rag_search import rag_search
 from app.workflows.nodes.fetch_profile import fetch_profile
 from app.workflows.nodes.profile_analyzer import profile_analyzer
@@ -13,7 +13,8 @@ logger = logging.getLogger("langgraph_builder")
 
 def should_continue(state: GraphState):
     """
-    Conditional routing deciding whether to execute basic tools, heavy tools, or perform profile syncing.
+    Conditional routing deciding whether to execute tools or perform side tasks.
+    Splits between standard tools and sensitive tools (HITL).
     """
     messages = state.get("messages", [])
     summary = state.get("summary", "")
@@ -36,22 +37,23 @@ def should_continue(state: GraphState):
         
     last_message = messages[-1]
     
+    # Tool Calling Branch
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-        # Check if any tool is the high-risk xweb instance
+        # Check if any tool is high-risk (e.g. provisioning)
         if any(tc["name"] == "create_xweb_instance" for tc in last_message.tool_calls):
-            return "xweb_tool"
-        return "basic_tools"
+            return "sensitive_tools"
+        return "tools"
         
     # OPTIMIZATION: Only summarize if tokens exceed threshold
     def estimate_tokens(msgs):
         text = "".join([str(m.content) for m in msgs])
-        return len(text.split()) * 1.3
+        return int(len(text.split()) * 1.4)
         
-    if estimate_tokens(messages) > settings.SUMMARY_THRESHOLD:
-        logger.info(f"MEMORY: Tokens exceed {settings.SUMMARY_THRESHOLD}, routing to summarizer.")
+    est_tokens = estimate_tokens(messages)
+    if est_tokens > settings.SUMMARY_THRESHOLD:
+        logger.info(f"MEMORY: Tokens ({est_tokens}) exceed threshold ({settings.SUMMARY_THRESHOLD}). Routing to summarizer.")
         return "summarize_history"
         
-    # When no more tools are called and no summary needed, we finish the turn
     return END
 
 workflow = StateGraph(GraphState)
@@ -60,34 +62,32 @@ workflow = StateGraph(GraphState)
 workflow.add_node("fetch_profile", fetch_profile)
 workflow.add_node("rag_search", rag_search)
 workflow.add_node("agent", generate_response)
-workflow.add_node("basic_tools", execute_basic_tools)
-workflow.add_node("xweb_tool", execute_xweb_tool)
+workflow.add_node("tools", execute_tools)
+workflow.add_node("sensitive_tools", execute_tools) # Same function, different node for HITL
 workflow.add_node("profile_analyzer", profile_analyzer)
 workflow.add_node("summarize_history", summarize_history)
 
 # Edges
-# Full Lifecycle: Start -> Fetch Profile -> RAG Search -> Agent Generation
 workflow.add_edge(START, "fetch_profile")
 workflow.add_edge("fetch_profile", "rag_search")
 workflow.add_edge("rag_search", "agent")
 
 workflow.add_conditional_edges("agent", should_continue, {
-    "basic_tools": "basic_tools", 
-    "xweb_tool": "xweb_tool", 
+    "tools": "tools", 
+    "sensitive_tools": "sensitive_tools",
     "profile_analyzer": "profile_analyzer",
     "summarize_history": "summarize_history",
     END: END
 })
 
-# After doing any tool, we go back to agent for generating final message
-workflow.add_edge("basic_tools", "agent")
-workflow.add_edge("xweb_tool", "agent")
+# After tools, always go back to agent
+workflow.add_edge("tools", "agent")
+workflow.add_edge("sensitive_tools", "agent")
 
-# After summarization, we finish the turn
+# Terminal nodes
 workflow.add_edge("summarize_history", END)
-
-# After syncing profile, finish the turn
 workflow.add_edge("profile_analyzer", END)
+
 
 # --- Lazy-init compiled graph with checkpointer ---
 _compiled_graph = None
@@ -105,11 +105,11 @@ def get_agent_graph():
         if checkpointer is None:
             logger.error("CRITICAL: Checkpointer is None! Memory will NOT work. Is the DB pool initialized?")
             # Fallback: compile without checkpointer (no memory)
-            _compiled_graph = workflow.compile(interrupt_before=["xweb_tool"])
+            _compiled_graph = workflow.compile(interrupt_before=["sensitive_tools"])
         else:
             logger.info("Compiling LangGraph with AsyncPostgresSaver checkpointer — Short-Term Memory ENABLED")
             _compiled_graph = workflow.compile(
                 checkpointer=checkpointer,
-                interrupt_before=["xweb_tool"]
+                interrupt_before=["sensitive_tools"]
             )
     return _compiled_graph

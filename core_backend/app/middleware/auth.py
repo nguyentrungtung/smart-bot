@@ -8,28 +8,33 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Preload public key into memory upon startup, don't read from disk on every request
+# Preload keys into memory upon startup
 _public_key = None
-
-import time
+_private_key = None
 
 def get_public_key():
-    try:
-        public_path = os.path.join(settings.KEYS_DIR, "public_key.pem")
-        with open(public_path, "rb") as f:
-            return f.read() # PyJWT handles the PEM string directly
-    except FileNotFoundError:
-        logger.error(f"Cannot find JWT Public Key at {public_path}. Run generate_jwt_keys.py first.")
-        raise HTTPException(status_code=500, detail="Internal Auth configuration error")
+    global _public_key
+    if _public_key is None:
+        try:
+            public_path = os.path.join(settings.KEYS_DIR, "public_key.pem")
+            with open(public_path, "rb") as f:
+                _public_key = f.read()
+        except FileNotFoundError:
+            logger.error(f"Cannot find JWT Public Key at {public_path}. Run generate_jwt_keys.py first.")
+            raise HTTPException(status_code=500, detail="Internal Auth configuration error")
+    return _public_key
 
 def get_private_key():
-    try:
-        private_path = os.path.join(settings.KEYS_DIR, "private_key.pem")
-        with open(private_path, "rb") as f:
-            return f.read()
-    except FileNotFoundError:
-        logger.error(f"Cannot find JWT Private Key at {private_path}. Run generate_jwt_keys.py first.")
-        raise HTTPException(status_code=500, detail="Internal Auth configuration error")
+    global _private_key
+    if _private_key is None:
+        try:
+            private_path = os.path.join(settings.KEYS_DIR, "private_key.pem")
+            with open(private_path, "rb") as f:
+                _private_key = f.read()
+        except FileNotFoundError:
+            logger.error(f"Cannot find JWT Private Key at {private_path}. Run generate_jwt_keys.py first.")
+            raise HTTPException(status_code=500, detail="Internal Auth configuration error")
+    return _private_key
 
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
@@ -45,12 +50,52 @@ def create_refresh_token(data: dict) -> str:
     private_key = get_private_key()
     return jwt.encode(to_encode, private_key, algorithm=settings.JWT_ALGORITHM)
 
+async def blacklist_token(token: str):
+    """
+    Adds a token to the Redis blacklist with a TTL equal to its remaining life.
+    """
+    try:
+        from app.utils.redis import get_redis
+        redis_client = await get_redis()
+        
+        # Decode without verification to get exp even if signature is invalid or expired
+        # (though we usually only blacklist tokens we just verified)
+        payload = jwt.decode(token, options={"verify_signature": False})
+        exp = payload.get("exp")
+        
+        if exp:
+            rem = exp - int(time.time())
+            if rem > 0:
+                # Add a small buffer of 60s to ensure it stays blacklisted until fully expired
+                await redis_client.setex(f"blacklist:{token}", rem + 60, "1")
+                logger.info(f"Token blacklisted successfully (TTL: {rem}s)")
+    except Exception as e:
+        logger.error(f"Failed to blacklist token: {str(e)}")
 
-def verify_jwt_token(token: str) -> dict:
+async def is_token_blacklisted(token: str) -> bool:
+    """
+    Checks if a token exists in the Redis blacklist.
+    """
+    try:
+        from app.utils.redis import get_redis
+        redis_client = await get_redis()
+        exists = await redis_client.exists(f"blacklist:{token}")
+        return exists > 0
+    except Exception as e:
+        logger.error(f"Redis blacklist check error: {str(e)}")
+        return False
+
+async def verify_jwt_token(token: str) -> dict:
     """
     Validates a JWT coming from the Preact frontend payload using the local RS256 Public Key.
-    Raises jwt.PyJWTError if invalid.
+    Also checks against the Redis blacklist.
     """
+    # 1. Check blacklist
+    if await is_token_blacklisted(token):
+        logger.warning(f"Attempted access with blacklisted token")
+        raise HTTPException(status_code=401, detail="Token has been revoked/logged out")
+
+    # 2. Standard JWT Validation
     public_key = get_public_key()
     
     try:
@@ -66,6 +111,7 @@ def verify_jwt_token(token: str) -> dict:
     except jwt.InvalidTokenError:
         logger.warning(f"Invalid JWT Token signature attempt")
         raise
+
 
 @asynccontextmanager
 async def session_lock(redis_client, session_id: str, timeout: int = 120):

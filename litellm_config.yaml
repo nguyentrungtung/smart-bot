@@ -3,8 +3,9 @@ model_list:
   - model_name: lm-studio-model
     litellm_params:
       model: openai/local-model
-      api_base: http://host.docker.internal:1234/v1
+      api_base: os.environ/LOCAL_MODEL_API_BASE
       api_key: "lm-studio"
+      rpm: 100 # Adjust based on local machine
   - model_name: gpt-4o
     litellm_params:
       model: openai/gpt-4o
@@ -19,7 +20,7 @@ model_list:
   - model_name: lm-studio-embedding
     litellm_params:
       model: openai/nomic-embed-text
-      api_base: http://host.docker.internal:1234/v1
+      api_base: os.environ/LOCAL_MODEL_API_BASE
       api_key: "lm-studio"
 
   - model_name: text-embedding-3-small
@@ -29,10 +30,11 @@ model_list:
 
 
 router_settings:
-  routing_strategy: usage-based-routing
+  routing_strategy: simple-shuffle
   redis_host: redis
   redis_port: 6379
   cache_responses: true
+  enable_pre_call_checks: true
   fallbacks:
     - {"lm-studio-model": ["gemini-2.5-flash", "gpt-4o"]}
     - {"lm-studio-embedding": ["text-embedding-3-small"]}

@@ -15,10 +15,10 @@ async def summarize_history(state: GraphState) -> Dict[str, Any]:
     messages = state.get("messages", [])
     current_summary = state.get("summary", "")
     
-    # Estimate tokens (rough heuristic: 1 word ~ 1.3 tokens)
+    # Estimate tokens (safer multiplier for local models)
     def estimate_tokens(msgs):
         text = "".join([str(m.content) for m in msgs])
-        return len(text.split()) * 1.3
+        return int(len(text.split()) * 1.4)
 
     total_est_tokens = estimate_tokens(messages)
     
@@ -28,9 +28,8 @@ async def summarize_history(state: GraphState) -> Dict[str, Any]:
 
     logger.info(f"SUMMARIZER: Threshold exceeded ({total_est_tokens:.0f} tokens). Generating summary...")
 
-    # We want to summarize the OLDER messages, keeping the last 5-10 for immediate context
-    # Let's say we summarize everything EXCEPT the last 6 messages
-    messages_to_summarize = messages[:-6]
+    # We want to summarize the OLDER messages, keeping the last 4 for immediate context
+    messages_to_summarize = messages[:-4]
     
     if not messages_to_summarize:
         return {"summary": current_summary}

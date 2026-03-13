@@ -31,8 +31,8 @@ class Settings(BaseSettings):
     MCP_INTERNAL_API_KEY: str = "dev-secure-mcp-key-123"
 
     # Memory Settings (Hybrid)
-    MAX_HISTORY_TOKENS: int = 4000  # Strict limit for LM Studio window
-    SUMMARY_THRESHOLD: int = 2000   # Trigger summarization above this token count
+    MAX_HISTORY_TOKENS: int = 3000  # Strict limit (with buffer) for LM Studio window
+    SUMMARY_THRESHOLD: int = 1500   # Trigger summarization earlier to keep context clean
 
     # Telegram HITL
     TELEGRAM_BOT_TOKEN: str = "" # If empty, HITL will mock approval output

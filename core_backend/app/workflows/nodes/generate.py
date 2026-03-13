@@ -65,23 +65,39 @@ async def generate_response(
     )
 
     # ── 3. Convert messages & Token Trimming ──────────────────
-    # We only keep the most recent messages that fit in the window
-    # To keep it simple, we convert all and then slice the list
     litellm_messages = langchain_to_litellm(messages, system_content)
     
     # Token Trimming logic (Layer 4)
     def count_est_tokens(msgs):
-        return sum(len(str(m.get("content", "")).split()) for m in msgs) * 1.3
+        """Estimate tokens with a safer multiplier (1.4) for local models."""
+        text = "".join([str(m.get("content", "")) for m in msgs])
+        return int(len(text.split()) * 1.4)
     
+    initial_tokens = count_est_tokens(litellm_messages)
+    logger.info(f"TRIMMER: Initial token estimate: {initial_tokens}")
+
     # Always keep system prompt (index 0) and the last N messages
+    removed_count = 0
     while count_est_tokens(litellm_messages) > settings.MAX_HISTORY_TOKENS and len(litellm_messages) > 2:
         # Remove the second message (index 1), preserve system prompt (index 0)
-        logger.info("TRIMMER: Removing one old message from context to fit window.")
         litellm_messages.pop(1)
+        removed_count += 1
+    
+    if removed_count > 0:
+        logger.info(f"TRIMMER: Removed {removed_count} old messages. New estimate: {count_est_tokens(litellm_messages)}")
+
+    # ── [TOKEN USAGE DEBUG] ──
+    current_tokens = count_est_tokens(litellm_messages)
+    logger.info(f"""
+    --- [TOKEN USAGE DEBUG] ---
+    Model: {settings.LLM_MODEL}
+    Limit (Config): {settings.MAX_HISTORY_TOKENS}
+    Estimated Current: {current_tokens}
+    Reserved for Response: {4096 - current_tokens if current_tokens < 4096 else 0} tokens
+    ---------------------------
+    """)
 
     has_multimodal = has_multimodal_user_message(litellm_messages)
-
-    # Gemini 2.5 handles multimodal + tools + streaming perfectly
     use_tools = TOOLS 
     should_stream = True
     current_model = settings.LLM_MODEL

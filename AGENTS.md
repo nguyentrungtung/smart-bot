@@ -3,44 +3,121 @@
 ## 📌 Project Overview
 - **Name:** Smart-Bot MVP
 - **Goal:** Enterprise-grade AI advisor and internal action-executor (multimodal, iframe widget, RAG, custom MCP tools).
-- **Tech Stack:** Preact (Widget), Python 3.11+, LangGraph, LiteLLM (Gemini 2.5-flash), FastAPI/Socket.io, RAGFlow, PostgreSQL (pgvector), Redis, Celery.
+- **Tech Stack:** Preact (Widget), Python 3.11+, LangGraph, LiteLLM (Gemini 2.5-flash / LM Studio), FastAPI/Socket.io, RAGFlow, PostgreSQL (pgvector), Redis.
 - **Current Phase:** Building MVP.
+
+## 🧠 Core Objectives & Arch (from Research)
+1. **Intelligent Advising**: Provide accurate product information for enterprise solutions.
+2. **Action Execution**: Execute agentic workflows (e.g., website creation, data retrieval).
+3. **Multimodal**: Support Voice (STT/TTS) and Vision (Image parsing) natively.
+4. **Hybrid Memory**: Short-term session via LangGraph Checkpointer + Long-term User Profiles in Postgres.
+5. **Decoupled Architecture**: 
+   - Frontend Agent UI (Iframe Widget)
+   - Core LangGraph Backend (FastAPI + Socket.io)
+   - LLM Gateway (LiteLLM Proxy)
+   - MCP Server (Tools/Integrations)
+   - Knowledge Base (RAGFlow/Posgres Vector)
 
 ## 🧠 How You (The AI) Should Think
 1. **UNDERSTAND FIRST:** NEVER start generating code before you have read the `docs/TechDesign-Smart-Bot-MVP.md` and `docs/PRD-Smart-Bot-MVP.md`.
-2. **CHECK PATTERNS:** Before implementing new architecture, consult `agent_docs/code_patterns.md` to ensure your code matches the strict Enterprise Edge Cases defined (Circuit Breakers, Session Locks, Auth).
-3. **ASK IF UNSURE:** If the user asks for a feature that contradicts the written constraints (e.g., trying to use direct SQL insert for RAGFlow instead of its REST API), STOP and explicitly warn the user.
-4. **THINK ALOUD:** Briefly explain your approach before modifying large chunks of code.
+2. **CHECK PATTERNS:** Before implementing new architecture, consult `agent_docs/code_patterns.md`. 
+3. **HYBRID MEMORY:** Always check if information should be stored in Short-Term (LangGraph State) or Long-Term (User Profile via `update_user_profile` tool).
+4. **RESILIENCE:** All external MCP calls MUST go through the `app.connectors.mcp.client.call_mcp_tool` which uses a Circuit Breaker.
 
-## 🔄 Workflow (Plan -> Execute -> Verify)
-1. **PLAN:** Read the user request, identify the files to touch, and write an implementation plan. 
-2. **EXECUTE:** Write the code strictly adhering to `agent_docs/tech_stack.md` and `agent_docs/code_patterns.md`.
-3. **VERIFY:** Check for type hints (Python), syntax errors, and run relevant test suites or linters. Fix any errors *before* asking the user to review.
+## 📁 Directory Structure (Annotated Logic)
+```text
+core_backend/                         # Backend Service (FastAPI + LangGraph)
+|-- alembic/                          # DB migrations for PostgreSQL
+|-- app/                              # Main application package
+|   |-- main.py                       # FastAPI & Socket.IO Entrypoint
+|   |-- api/                          # Interface layer
+|   |   |-- auth_routes.py            # JWT-based REST authentication
+|   |   |-- socket_handler.py         # Socket.IO logic for real-time chat & streaming
+|   |-- config/                       # Application configuration
+|   |   |-- settings.py               # Pydantic settings loading from .env
+|   |-- connectors/                   # External service integrations
+|   |   |-- mcp/                      # Model Context Protocol (MCP) clients
+|   |   |   |-- client.py             # Resilience MCP client with Circuit Breaker
+|   |   |-- local_tools.py            # Direct Python tools (DB, File, System tasks)
+|   |-- memory/                       # State persistence
+|   |   |-- chat_history.py           # Session-based chat logs & feedback storage
+|   |   |-- long_term.py              # Persistent User Profile management
+|   |-- middleware/                   # Request/Response processing
+|   |   |-- auth.py                   # Token validation & Blacklisting (Redis)
+|   |   |-- pii_scrubber.py           # PII detection and masking
+|   |-- multimodal/                   # Vision/Voice processing
+|   |   |-- capabilities.py           # Multimodal feature flags & detection
+|   |   |-- processor.py              # Base64 media processing for LLMs
+|   |-- prompts/                      # LLM Persona & Prompting
+|   |   |-- templates/                # Reusable prompt definitions
+|   |   |   |-- advisor.py            # Primary Sales Advisor persona
+|   |-- schemas/                      # Data models (Pydantic)
+|   |   |-- socket_io.py              # Real-time event communication models
+|   |-- utils/                        # Shared helper functions
+|   |   |-- db.py                     # SQLAlchemy engine and session logic
+|   |   |-- logger.py                 # Centralized structured logging
+|   |   |-- redis.py                  # Redis client for caching/blacklisting
+|   |   |-- resilience.py             # Circuit Breaker & Retry decorators
+|   |   |-- tokens.py                 # Context window & Token management utilities
+|   |-- workflows/                    # LangGraph Cognitive Brain
+|       |-- graph.py                  # Workflow compilation & Node routing
+|       |-- state.py                  # Universal GraphState definition
+|       |-- hitl.py                   # Human-In-The-Loop (HITL) interception
+|       |-- nodes/                    # Atomic functional steps
+|           |-- fetch_profile.py      # User profile retrieval
+|           |-- generate.py           # Main LLM generation (LiteLLM)
+|           |-- guard.py              # Input/Output safety filtering
+|           |-- message_converter.py  # Message format harmonization
+|           |-- profile_analyzer.py   # User intent & interest extraction
+|           |-- rag_search.py         # Knowledge base retrieval (RAGFlow/Posgres)
+|           |-- stream_handler.py     # Token-by-token streaming logic
+|           |-- summarizer.py         # Context compression & memory management
+|           |-- tool_defs.py          # Dynamic tool schema generation
+|           |-- tools.py              # Unified tool execution engine
+|-- scripts/                          # DevOps & Initialization tools
+|-- tests/                            # Pytest test suite
+|-- alembic.ini                       # Migration config
+|-- Dockerfile                        # Backend container recipe
+|-- requirements.txt                  # Python dependency manifest
+```
 
-## 📁 Context Files
-- `/docs/PRD-Smart-Bot-MVP.md`: The WHAT and WHY we are building it.
-- `/docs/TechDesign-Smart-Bot-MVP.md`: The HOW we are building it (Architecture & Edge Cases).
-- `/agent_docs/*`: Specific, bite-sized rule sets for code generation.
+## 🐋 Docker Compose Snippet (Current)
+```yaml
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    ports: ["5432:5432"]
+    profiles: ["infra", "backend"]
 
-## 🚧 Current State & Roadmap
-- [x] Phase 1: Research & Tech Design (Completed)
-- [x] Phase 2: Core Backend Setup (Postgres, Redis, RAGFlow, LiteLLM configs)
-- [x] Phase 3: LangGraph Boilerplate & API (Socket.io, Session Locks, PII Middleware)
-- [x] Phase 4: MCP Servers (Xweb tool + Telegram HITL)
-- [x] Phase 5: Preact Multimodal Widget UI (Completed)
-- [x] Phase 6: Infrastructure & Backend Deep-Dive (Completed)
-- [x] Phase 7: Full System Realization & Gaps (Completed)
-- [x] Phase 8: Gemini 2.5 Upgrade & Multimodal Refactoring (Completed)
-- [x] Phase 9: Database Seeding, Chat Interactions History & User Rating Feedback (Completed)
+  redis:
+    image: redis:alpine
+    ports: ["6379:6379"]
+    profiles: ["infra", "backend"]
 
+  litellm_proxy:
+    image: ghcr.io/berriai/litellm:main-latest
+    ports: ["4000:4000"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    environment:
+      - LOCAL_MODEL_API_BASE=${LOCAL_MODEL_API_BASE:-http://host.docker.internal:1234/v1}
+    profiles: ["infra", "backend"]
+
+  core_backend:
+    build: ./core_backend
+    ports: ["8000:8000"]
+    env_file: .env
+    profiles: ["backend"]
+
+  mcp_server:
+    build: ./mcp_servers
+    ports: ["8001:8001"]
+    profiles: ["tools", "backend"]
+```
 
 ## 🚫 What NOT To Do (Strict Anti-Patterns)
-1. **NO** Linux/Bash Syntax: The host OS is Windows 11. All terminal commands must be Windows PowerShell compatible.
-2. **NO** Dirty Testing: Never run `pytest` if the Docker state is dirty. Always run `docker-compose down -v` and `docker-compose build --no-cache` before integration tests to prevent hallucinated passing/failing caused by stale SQLite/Postgres data.
-3. **NO** `psycopg` raw db connections per thread: Use global connection pooling for LangGraph `MemorySaver`.
-4. **NO** Socket.io Wildcard CORS (`*`): Strictly load domains from `.env`/`config.yaml`.
-5. **NO** Missing Locks: Always add a `timeout` (TTL) parameter to Redis locks to prevent Zombie sessions.
-6. **NO** Custom Authentication Headers for Browser WebSockets: Pass JWT tokens exclusively inside the `auth` payload during Socket IO initialization.
-7. **NO** Secret Key JWTs: Do NOT use `HS256` or string secrets for JWT. The project MUST generate and use an **RSA Keypair (RS256)** for signing and decoding tokens.
-8. **NO** Raw File Uploads: Strictly reject PDF/DOCX. Only convert Audio via memory buffer (pydub/FFmpeg) before hitting Whisper.
-9. **NO** RAG L2 Distance: Always use Cosine Similarity (`<=>`) operator for `pgvector` queries.
+1. **NO** Linux/Bash: Host is Windows 11 PowerShell.
+2. **NO** `HS256`: Strictly use **RS256** RSA Keypairs for JWT.
+3. **NO** Plain Redis Blacklist: Always set TTL on blacklisted tokens.
+4. **NO** Unified MCP hardcoding: Use the `mcp.client` wrapper for resilience.
+5. **NO** Skipping Local Tools: Simple tasks (Time, File) must be in `local_tools.py`, NOT MCP.
+6. **NO** Context Overflow: Always respect `MAX_HISTORY_TOKENS` and use `summarizer.py`.

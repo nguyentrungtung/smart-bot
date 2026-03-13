@@ -70,5 +70,47 @@ TOOLS = [
                 }
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_local_file",
+            "description": "Đọc nội dung của một file cục bộ trên máy chủ.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "Đường dẫn đến file cần đọc"}
+                },
+                "required": ["file_path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_local_file",
+            "description": "Ghi nội dung vào một file cục bộ trên máy chủ.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "Đường dẫn đến file cần ghi"},
+                    "content": {"type": "string", "description": "Nội dung cần ghi vào file"}
+                },
+                "required": ["file_path", "content"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_local_directory",
+            "description": "Liệt kê danh sách các file và thư mục trong một thư mục cục bộ.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "directory_path": {"type": "string", "description": "Đường dẫn thư mục (mặc định là thư mục hiện tại '.')"}
+                }
+            }
+        }
     }
 ]
