@@ -2,6 +2,10 @@ from typing import TypedDict, Annotated, List, Dict, Any
 import operator
 from langchain_core.messages import BaseMessage
 
+def merge_metadata(old: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
+    """Reducer to merge metadata dicts in parallel nodes."""
+    return {**old, **new}
+
 class GraphState(TypedDict):
     """
     State schema for the LangGraph agent.
@@ -17,6 +21,6 @@ class GraphState(TypedDict):
     # Holds raw thinking process before final response is generated
     thinking: List[str]
     # Generic metadata for future extensions
-    metadata: Dict[str, Any]
+    metadata: Annotated[Dict[str, Any], merge_metadata]
 
 

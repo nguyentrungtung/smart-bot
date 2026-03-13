@@ -43,7 +43,14 @@ async def handle_nonstreaming(
     elif not full_content:
         logger.warning(f"Empty content for sid={sid}")
 
-    return AIMessage(content=full_content)
+    # Calculate tokens for the final response
+    from app.utils.tokens import calculate_tokens
+    token_count = calculate_tokens(full_content)
+
+    return AIMessage(
+        content=full_content,
+        additional_kwargs={"token_count": token_count}
+    )
 
 
 async def handle_streaming(
@@ -127,8 +134,19 @@ async def handle_streaming(
     logger.info(f"Streaming done: {chunk_count} chunks, {len(full_content)} chars total, tool_calls={len(tool_calls_acc)}")
 
     # Build AIMessage
+    usage = getattr(chunk, "usage", None) if 'chunk' in locals() else None
+    token_count = 0
+    if usage:
+        token_count = getattr(usage, "total_tokens", 0)
+    else:
+        # Fallback if usage is not in chunk (some providers don't send it in stream)
+        token_count = int(len(full_content.split()) * 1.4)
+
     clean = re.sub(r"<thinking>.*?</thinking>", "", full_content, flags=re.DOTALL).strip()
-    ai_msg = AIMessage(content=clean or full_content)
+    ai_msg = AIMessage(
+        content=clean or full_content,
+        additional_kwargs={"token_count": token_count}
+    )
 
     if tool_calls_acc:
         ai_msg.tool_calls = _finalize_tool_calls(tool_calls_acc)

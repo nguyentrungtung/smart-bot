@@ -108,8 +108,11 @@ async def handle_message(sid, data):
         async with sio.session(sid) as session:
             user_id = session.get("user_id")
 
+        from app.utils.tokens import calculate_tokens
+        user_tokens = calculate_tokens(input_content)
+
         inputs = {
-            "messages": [HumanMessage(content=input_content)],
+            "messages": [HumanMessage(content=input_content, additional_kwargs={"token_count": user_tokens})],
             "session_id": session_id,
             "user_id": user_id,
             "thinking": [],

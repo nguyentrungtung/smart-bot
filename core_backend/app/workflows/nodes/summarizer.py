@@ -15,11 +15,8 @@ async def summarize_history(state: GraphState) -> Dict[str, Any]:
     messages = state.get("messages", [])
     current_summary = state.get("summary", "")
     
-    # Estimate tokens (safer multiplier for local models)
-    def estimate_tokens(msgs):
-        text = "".join([str(m.content) for m in msgs])
-        return int(len(text.split()) * 1.4)
-
+    # Estimate tokens using WORM strategy
+    from app.utils.tokens import estimate_tokens
     total_est_tokens = estimate_tokens(messages)
     
     # Only summarize if we are over the threshold

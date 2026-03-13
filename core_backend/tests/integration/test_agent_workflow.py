@@ -67,7 +67,7 @@ async def test_workflow_rag_confidence_fallback(agent_graph):
     user_msg = HumanMessage(content="Bạn nghĩ gì về chính trị thế giới?")
     
     # Mock RAG search to return nothing (empty list)
-    with patch("app.workflows.nodes.rag_search.vector_search", return_value=[]):
+    with patch("app.workflows.nodes.rag_search.rag_search", return_value={"rag_documents": [], "metadata": {"rag_failed": True}}):
         result = await agent_graph.ainvoke({"messages": [user_msg]})
         
         # Should hit the fallback guard

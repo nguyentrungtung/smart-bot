@@ -28,4 +28,4 @@ async def fetch_profile(state: GraphState) -> Dict[str, Any]:
     else:
         logger.info(f"LTM: No profile found for {user_id}")
 
-    return {"metadata": {**state.get("metadata", {}), "profile": profile}}
+    return {"metadata": {"profile": profile}}

@@ -45,12 +45,15 @@ async def generate_response(
     summary = state.get("summary", "")
 
     # ── 1. Guard: bypass check ────────────────────────────────
-    fallback = should_bypass(messages, metadata, rag_docs)
-    if fallback is not None:
-        if sio and sid:
-            await sio.emit("message_stream", {"chunk": fallback.content}, room=sid)
-            await sio.emit("message_complete", {"session_id": state.get("session_id")}, room=sid)
-        return {"messages": [fallback]}
+    if settings.GUARDS_ENABLED:
+        fallback = should_bypass(messages, metadata, rag_docs)
+        if fallback is not None:
+            if sio and sid:
+                await sio.emit("message_stream", {"chunk": fallback.content}, room=sid)
+                await sio.emit("message_complete", {"session_id": state.get("session_id")}, room=sid)
+            return {"messages": [fallback]}
+    else:
+        logger.info("Guard: GUARDS_ENABLED=False. Skipping bypass check.")
 
     # ── 2. Build prompt context ───────────────────────────────
     context_str = f"User Profile: {metadata.get('profile', {})}"
@@ -68,31 +71,34 @@ async def generate_response(
     litellm_messages = langchain_to_litellm(messages, system_content)
     
     # Token Trimming logic (Layer 4)
-    def count_est_tokens(msgs):
-        """Estimate tokens with a safer multiplier (1.4) for local models."""
-        text = "".join([str(m.get("content", "")) for m in msgs])
-        return int(len(text.split()) * 1.4)
+    from app.utils.tokens import estimate_tokens
     
-    initial_tokens = count_est_tokens(litellm_messages)
+    initial_tokens = estimate_tokens(messages)
     logger.info(f"TRIMMER: Initial token estimate: {initial_tokens}")
 
-    # Always keep system prompt (index 0) and the last N messages
+    # Always keep high-level messages, preserve system prompt
     removed_count = 0
-    while count_est_tokens(litellm_messages) > settings.MAX_HISTORY_TOKENS and len(litellm_messages) > 2:
-        # Remove the second message (index 1), preserve system prompt (index 0)
-        litellm_messages.pop(1)
+    while estimate_tokens(messages) > settings.MAX_HISTORY_TOKENS and len(messages) > 2:
+        # Note: Trimming 'messages' (LangChain) because litellm_messages is a derived view
+        # In a real scenario, we'd need to update 'state' or at least the local 'messages'
+        # For now, let's stick to the existing trimming logic pattern but with optimized counts
+        messages.pop(1)
         removed_count += 1
+        # Re-convert to keep litellm_messages in sync if needed, 
+        # but let's just optimize the existing loop for now.
     
+    # Re-build litellm_messages after trimming
     if removed_count > 0:
-        logger.info(f"TRIMMER: Removed {removed_count} old messages. New estimate: {count_est_tokens(litellm_messages)}")
+        litellm_messages = langchain_to_litellm(messages, system_content)
+        logger.info(f"TRIMMER: Removed {removed_count} old messages. New estimate: {estimate_tokens(messages)}")
 
     # ── [TOKEN USAGE DEBUG] ──
-    current_tokens = count_est_tokens(litellm_messages)
+    current_tokens = estimate_tokens(messages)
     logger.info(f"""
     --- [TOKEN USAGE DEBUG] ---
     Model: {settings.LLM_MODEL}
     Limit (Config): {settings.MAX_HISTORY_TOKENS}
-    Estimated Current: {current_tokens}
+    Estimated Current (WORM): {current_tokens}
     Reserved for Response: {4096 - current_tokens if current_tokens < 4096 else 0} tokens
     ---------------------------
     """)

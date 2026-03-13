@@ -45,9 +45,7 @@ def should_continue(state: GraphState):
         return "tools"
         
     # OPTIMIZATION: Only summarize if tokens exceed threshold
-    def estimate_tokens(msgs):
-        text = "".join([str(m.content) for m in msgs])
-        return int(len(text.split()) * 1.4)
+    from app.utils.tokens import estimate_tokens
         
     est_tokens = estimate_tokens(messages)
     if est_tokens > settings.SUMMARY_THRESHOLD:
@@ -69,7 +67,8 @@ workflow.add_node("summarize_history", summarize_history)
 
 # Edges
 workflow.add_edge(START, "fetch_profile")
-workflow.add_edge("fetch_profile", "rag_search")
+workflow.add_edge(START, "rag_search")
+workflow.add_edge("fetch_profile", "agent")
 workflow.add_edge("rag_search", "agent")
 
 workflow.add_conditional_edges("agent", should_continue, {

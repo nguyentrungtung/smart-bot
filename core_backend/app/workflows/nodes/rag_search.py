@@ -31,6 +31,12 @@ async def rag_search(state: GraphState) -> Dict[str, Any]:
             search_query = f"{prev_user_msg} {query_text}"
             logger.info(f"RAG: Context enrichment used: {search_query}")
 
+    from app.workflows.nodes.tool_defs import BYPASS_KEYWORDS
+    is_whitelisted = any(kw in search_query.lower() for kw in BYPASS_KEYWORDS)
+    if is_whitelisted:
+        logger.info(f"RAG: Query '{search_query[:20]}' matches bypass keywords. Skipping search.")
+        return {"rag_documents": [], "metadata": {"rag_failed": False}}
+
     logger.info(f"RAG: Searching for: {search_query[:50]}...")
 
     # 2. Get the connection pool from app state (injected via main.py)
@@ -79,12 +85,11 @@ async def rag_search(state: GraphState) -> Dict[str, Any]:
         
         if not docs:
             logger.info("RAG: No relevant documents found above 0.7 threshold.")
-            return {"rag_documents": [], "metadata": {**state.get("metadata", {}), "rag_failed": False}}
+            return {"rag_documents": [], "metadata": {"rag_failed": True}}
 
         logger.info(f"RAG: Found {len(docs)} relevant documents.")
         # Clear the failed flag if we found something
-        new_metadata = {**state.get("metadata", {}), "rag_failed": False}
-        return {"rag_documents": docs, "metadata": new_metadata}
+        return {"rag_documents": docs, "metadata": {"rag_failed": False}}
 
 
 

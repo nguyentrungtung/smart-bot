@@ -4,7 +4,8 @@ import sys
 import os
 
 # Add the project root to sys.path to allow importing 'app'
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add the project root (core_backend) to sys.path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from langchain_core.messages import HumanMessage
 from app.workflows.graph import get_agent_graph

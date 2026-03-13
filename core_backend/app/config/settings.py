@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     
     # Multimodal: None=auto-detect from model, True=force on, False=force off
     MULTIMODAL_ENABLED: bool | None = None
+    GUARDS_ENABLED: bool = True
 
     # SocketIO CORS Origins
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173"]

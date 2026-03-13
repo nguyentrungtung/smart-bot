@@ -2,22 +2,35 @@ import logging
 
 logger = logging.getLogger("token_utils")
 
-def estimate_tokens(messages_or_text) -> float:
+def calculate_tokens(text: str) -> int:
     """
-    Consolidated token estimation logic (Word count * 1.3).
-    Accepts a list of LangChain messages or a raw string.
+    Calculate tokens for a single string using word-count multiplier.
+    WIRM (Write Once): This should be called when creating a message.
+    """
+    if not text:
+        return 0
+    return int(len(str(text).split()) * 1.4)
+
+def estimate_tokens(messages_or_text) -> int:
+    """
+    Consolidated token estimation logic.
+    WORM (Read Many): Sums 'token_count' from message metadata if available.
     """
     if isinstance(messages_or_text, str):
-        return len(messages_or_text.split()) * 1.3
+        return calculate_tokens(messages_or_text)
     
-    # It's a list of messages (LangChain or LiteLLM dicts)
-    total_text = ""
+    # Sum from metadata
+    total = 0
     for m in messages_or_text:
-        content = ""
-        if isinstance(m, dict):
-            content = str(m.get("content", ""))
+        # Support both LangChain objects and LiteLLM dicts
+        metadata = getattr(m, "additional_kwargs", {}) if not isinstance(m, dict) else m.get("metadata", {})
+        count = metadata.get("token_count")
+        
+        if count is not None:
+            total += count
         else:
-            content = str(getattr(m, "content", ""))
-        total_text += content + " "
+            # Fallback if metadata is missing (should not happen after migration)
+            content = str(getattr(m, "content", "")) if not isinstance(m, dict) else str(m.get("content", ""))
+            total += calculate_tokens(content)
     
-    return len(total_text.split()) * 1.3
+    return total
