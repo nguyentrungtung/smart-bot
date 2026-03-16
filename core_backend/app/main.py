@@ -16,12 +16,17 @@ from app.utils import db
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting up Smart-Bot Backend...")
+    dsn = settings.DATABASE_URL.replace("+psycopg", "")
     try:
-        async with AsyncConnectionPool(settings.DATABASE_URL, max_size=20, kwargs={"autocommit": True}) as pool_instance:
+        async with AsyncConnectionPool(dsn, max_size=20) as pool_instance:
             db.pool = pool_instance
             db.checkpointer = AsyncPostgresSaver(pool_instance)
             try:
-                await db.checkpointer.setup()
+                # Run setup on a dedicated autocommit connection to allow CREATE INDEX CONCURRENTLY
+                async with pool_instance.connection() as setup_conn:
+                    await setup_conn.set_autocommit(True)
+                    setup_saver = AsyncPostgresSaver(setup_conn)
+                    await setup_saver.setup()
                 logger.info("LangGraph Checkpoint tables verified/created.")
             except Exception as e:
                 logger.warning(f"Checkpointer setup failed: {str(e)}. Falling back to MemorySaver.")
@@ -55,7 +60,10 @@ async def health_check():
     return {"status": "ok", "version": "1.0.0"}
 
 from app.api.auth_routes import router as auth_router
-fastapi_app.include_router(auth_router)
+from app.api.chat_routes import router as chat_router
+
+fastapi_app.include_router(auth_router, prefix="/api/v1")
+fastapi_app.include_router(chat_router, prefix="/api/v1")
 
 # 3. Create the final wrapped ASGI App (Socket.IO + FastAPI)
 from app.api.socket_handler import sio

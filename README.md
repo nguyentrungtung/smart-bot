@@ -53,7 +53,20 @@ Smart-Bot là một giải pháp Chatbot Agentic hiện đại được xây d�
 
 4. **Seed dữ liệu mẫu (RAG)**:
    ```bash
-   docker-compose exec core_backend python scripts/seed_db.py
+   docker compose exec core_backend python scripts/seed_db.py
+   ```
+
+5. **Reset & Rebuild từ đầu (Clean Start)**:
+   Nếu bạn muốn xóa toàn bộ dữ liệu (bao gồm Database volumes) và build lại:
+   ```bash
+   # Dừng và xóa volume
+   docker compose --profile backend --profile tools down -v
+   
+   # Build và chạy lại
+   docker compose --profile backend --profile tools up -d --build
+   
+   # Áp dụng lại migration (bắt buộc sau khi xóa volume)
+   docker compose exec core_backend alembic upgrade head
    ```
 
 ---
@@ -79,6 +92,29 @@ Widget được xây dựng bằng **Preact** và **Vite**, thiết kế theo ph
 
 ---
 
+## 🗄️ Quản lý Database & Migration
+
+Hệ thống sử dụng **PostgreSQL** với 3 thành phần quản lý schema khác nhau:
+
+1. **LiteLLM Tables**: Được tự động khởi tạo bởi LiteLLM proxy khi container startup.
+2. **LangGraph Checkpointers**: Tự động tạo các bảng `checkpoints`, `checkpoint_blobs`,... khi Backend khởi động (thông qua `AsyncPostgresSaver`).
+3. **Chatbot Service Tables**: Quản lý bởi **Alembic** (UserProfile, ChatInteraction, SessionMetadata).
+
+### Cách chạy Migration (Alembic)
+Nếu bạn thay đổi database model trong `app/memory/` hoặc `app/schemas/`, hãy chạy lệnh sau để cập nhật schema:
+
+```bash
+# 1. Tạo file migration mới (với cơ chế tự động phát hiện thay đổi)
+docker compose exec core_backend alembic revision --autogenerate -m "Mô tả thay đổi"
+
+# 2. Áp dụng migration vào database hiện tại
+docker compose exec core_backend alembic upgrade head
+```
+
+*Lưu ý: Hệ thống đã được cấu hình để Alembic tự động bỏ qua (ignore) các bảng của LiteLLM và LangGraph khi so sánh schema.*
+
+---
+
 ## ⚙️ Backend & API
 
 Backend sử dụng **FastAPI** và kết nối qua **Socket.IO** để hỗ trợ streaming streaming và trạng thái "AI đang suy nghĩ" (Thinking).
@@ -101,13 +137,34 @@ docker-compose exec core_backend python scripts/test_bypass_logic.py
 
 ---
 
+### Quản trị & Dọn dẹp bộ nhớ (Maintenance)
+Sử dụng script `clear_memory.py` để dọn dẹp database khi cần thiết hoặc để phục vụ việc kiểm thử (test memory):
+```bash
+# Xóa Short-term memory (Xóa lịch sử chat trong LangGraph)
+docker-compose exec core_backend python scripts/clear_memory.py --short-term
+
+# Xóa Long-term memory (Xóa hồ sơ/sở thích khách hàng)
+docker-compose exec core_backend python scripts/clear_memory.py --long-term
+
+# Xóa Analytics & Session (Xóa metadata và chat interactions)
+docker-compose exec core_backend python scripts/clear_memory.py --analytics
+
+# Xóa SẠCH TOÀN BỘ ký ức (Short + Long + Analytics)
+docker-compose exec core_backend python scripts/clear_memory.py --all
+```
+
+---
+
 ## 🛡️ Security & Auth
 
 Dự án sử dụng cặp khóa RSA để ký và xác thực JWT.
 - **Private Key**: Dùng để tạo token (thường ở phía Web App của bạn).
 - **Public Key**: `/app/.keys/public_key.pem` (Backend dùng để giải mã).
 
-Để tạo Token test, bạn có thể tham khảo logic trong `test_jwt_auth.py`.
+Để tạo Token test, bạn có thể tham khảo logic trong `test_jwt_auth.py` hoặc sử dụng tài khoản test mặc định (sau khi chạy seed):
+- **Username**: `admin`
+- **Password**: `admin123`
+- **Endpoint**: `POST /api/v1/auth/login`
 
 ---
 

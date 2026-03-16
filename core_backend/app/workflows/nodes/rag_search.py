@@ -50,18 +50,20 @@ async def rag_search(state: GraphState) -> Dict[str, Any]:
     # 3. REAL Embedding: Call LiteLLM embedding endpoint
     try:
         import litellm
+        litellm.drop_params = True # Standardize parameter handling for mixed local/cloud environments
         emb_resp = await litellm.aembedding(
             model="lm-studio-embedding", # As defined in litellm_config.yaml
             input=[search_query],
             api_base=settings.LITELLM_API_BASE,
             api_key=settings.LITELLM_API_KEY,
-            custom_llm_provider="openai", # Force OpenAI protocol for proxy
+            custom_llm_provider="openai", 
+            dimensions=settings.EMBEDDING_DIM # Added for cloud model compatibility
         )
         embedding = emb_resp.data[0]["embedding"]
     except Exception as emb_err:
         logger.error(f"RAG: Embedding generation failed: {emb_err}")
         # Fallback to dummy but mark it as safe failure
-        embedding = [0.1] * 1536 
+        embedding = [0.1] * settings.EMBEDDING_DIM 
 
     try:
         async with pool.connection() as conn:

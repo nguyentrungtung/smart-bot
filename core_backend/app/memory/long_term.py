@@ -6,7 +6,7 @@ from app.config.settings import settings
 import datetime
 
 logger = logging.getLogger("long_term_memory")
-Base = declarative_base()
+from app.schemas.base import Base
 
 class UserProfile(Base):
     """
@@ -63,23 +63,25 @@ class LongTermMemory:
 
         try:
             async with self.pool.connection() as conn:
-                async with conn.cursor() as cur:
-                    # UPSERT logic
-                    query = """
-                    INSERT INTO user_profiles (user_id, name, preferences, facts, last_updated)
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (user_id) DO UPDATE SET
-                        name = EXCLUDED.name,
-                        preferences = EXCLUDED.preferences,
-                        facts = EXCLUDED.facts,
-                        last_updated = EXCLUDED.last_updated
-                    """
-                    await cur.execute(query, (
-                        user_id, 
-                        updates.get("name"),
-                        updates.get("preferences", {}),
-                        updates.get("facts", []),
-                        datetime.datetime.utcnow()
-                    ))
+                async with conn.transaction():
+                    async with conn.cursor() as cur:
+                        # UPSERT logic
+                        query = """
+                        INSERT INTO user_profiles (user_id, name, preferences, facts, last_updated)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (user_id) DO UPDATE SET
+                            name = EXCLUDED.name,
+                            preferences = EXCLUDED.preferences,
+                            facts = EXCLUDED.facts,
+                            last_updated = EXCLUDED.last_updated
+                        """
+                        from psycopg.types.json import Json
+                        await cur.execute(query, (
+                            user_id, 
+                            updates.get("name"),
+                            Json(updates.get("preferences", {})),
+                            Json(updates.get("facts", [])),
+                            datetime.datetime.utcnow()
+                        ))
         except Exception as e:
             logger.error(f"LTM: Failed to update profile for {user_id}: {str(e)}")

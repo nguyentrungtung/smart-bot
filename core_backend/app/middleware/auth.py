@@ -7,7 +7,18 @@ from app.config.settings import settings
 import logging
 import time
 
+import time
+from passlib.context import CryptContext
+
 logger = logging.getLogger(__name__)
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
 
 # Preload keys into memory upon startup
 _public_key = None

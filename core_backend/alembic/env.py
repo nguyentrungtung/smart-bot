@@ -14,17 +14,23 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# add your model's MetaData object here
-# for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
-target_metadata = None
+from app.schemas.base import Base
+from app.memory.long_term import UserProfile
+from app.memory.chat_history import ChatInteraction, SessionMetadata
+from app.schemas.user import User
+from app.schemas.document import Document
+from app.config.settings import settings
 
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
+target_metadata = Base.metadata
 
+def include_object(object, name, type_, reflected, compare_to):
+    if type_ == "table" and (
+        name.startswith("LiteLLM_") or 
+        name == "_prisma_migrations" or 
+        name.startswith("checkpoint")
+    ):
+        return False
+    return True
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
@@ -38,10 +44,11 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    url = settings.DATABASE_URL
     context.configure(
         url=url,
         target_metadata=target_metadata,
+        include_object=include_object,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -57,15 +64,19 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
+    configuration = config.get_section(config.config_ini_section, {})
+    configuration["sqlalchemy.url"] = settings.DATABASE_URL
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection, 
+            target_metadata=target_metadata,
+            include_object=include_object
         )
 
         with context.begin_transaction():

@@ -373,3 +373,22 @@
   color: var(--text-main);
   font-weight: 600;
 }
+
+/* Rate Buttons */
+.rate-btn {
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.rate-btn:not(:disabled):hover {
+  background: #f1f5f9;
+  transform: scale(1.1);
+}
+
+.rate-btn.active {
+  background: #eff6ff;
+}

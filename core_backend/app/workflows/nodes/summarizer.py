@@ -62,12 +62,21 @@ async def summarize_history(state: GraphState) -> Dict[str, Any]:
         new_summary = response.choices[0].message.content
         logger.info("SUMMARIZER: New summary generated successfully.")
         
-        # We return the new summary. The graph will then use this and we can potentially 
-        # trim the messages in the next node.
-        # Note: In LangGraph, we can't easily "delete" messages from the middle of the list 
-        # if using operator.add, but we can implement a custom trimmer in the agent node 
-        # that only passes recent ones + summary to the LLM.
-        return {"summary": new_summary}
+        # TRUNCATION LOGIC:
+        # Since we use add_messages reducer, returning RemoveMessage objects 
+        # for old messages will delete them from the checkpointer state.
+        from langchain_core.messages import RemoveMessage
+        delete_ops = []
+        for m in messages_to_summarize:
+            if m.id:
+                delete_ops.append(RemoveMessage(id=m.id))
+        
+        logger.info(f"SUMMARIZER: Truncating {len(delete_ops)} old messages from state.")
+        
+        return {
+            "summary": new_summary,
+            "messages": delete_ops
+        }
 
     except Exception as e:
         logger.error(f"Summarizer Error: {e}")

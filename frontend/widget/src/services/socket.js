@@ -31,7 +31,7 @@ class SocketService {
 
         const url = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
         try {
-            const response = await fetch(`${url}/auth/refresh`, {
+            const response = await fetch(`${url}/api/v1/auth/refresh`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ refresh_token: this.refreshToken })

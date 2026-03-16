@@ -97,9 +97,9 @@ async def generate_response(
     logger.info(f"""
     --- [TOKEN USAGE DEBUG] ---
     Model: {settings.LLM_MODEL}
-    Limit (Config): {settings.MAX_HISTORY_TOKENS}
+    Limit (History): {settings.MAX_HISTORY_TOKENS}
     Estimated Current (WORM): {current_tokens}
-    Reserved for Response: {4096 - current_tokens if current_tokens < 4096 else 0} tokens
+    Reserved for Response (MAX): {settings.MAX_RESPONSE_TOKENS} tokens
     ---------------------------
     """)
 
@@ -129,6 +129,7 @@ async def generate_response(
             api_key=settings.LITELLM_API_KEY,
             custom_llm_provider="openai",  # Proxy speaks OpenAI protocol
             stream=should_stream,
+            max_tokens=settings.MAX_RESPONSE_TOKENS, # Explicit limit for local models
         )
 
         # ── 5. Handle response ────────────────────────────────

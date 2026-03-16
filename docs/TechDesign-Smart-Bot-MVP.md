@@ -4,7 +4,7 @@
 Smart-Bot is built using a decoupled, highly concurrent microservices architecture. The backbone is Python-based (LangGraph, Python 3.11+), enabling stateful Agentic flows that communicate via `python-socketio` for real-time streaming to an embedded JS widget (Preact, within an `iframe`).
 - **Core AI Engine**: LangGraph orchestrates complex, cyclical Agent logic and natively manages state.
 - **Model Gateway**: LiteLLM sits as an HTTP/REST proxy between the Backend and models, prioritizing local models (LM Studio) and failing over to OpenAI.
-- **Data Engine**: A standalone Open Source solution, RAGFlow, runs on a completely separate server for specialized data ingestion, chunking, and evaluation. Once vectors are tested and approved in RAGFlow, a nightly Celery Cronjob synchronizes the high-quality embeddings into the core backend's centralized PostgreSQL instance using the `pgvector` extension.
+- **Data Engine**: A standalone Open Source solution, RAGFlow, runs on a completely separate server for specialized data ingestion, chunking, and evaluation. Once vectors are tested and approved in RAGFlow, a nightly Celery Cronjob synchronizes the high-quality embeddings into the core backend's centralized PostgreSQL instance using the `pgvector` extension. **Standardized Vector Dimension: 768** to ensure full compatibility between local models (LM Studio) and cloud failovers (Gemini/OpenAI).
 - **External Tooling**: External system interactions (like Xweb creation) are decoupled into independent Model Context Protocol (MCP) servers. The backend uses a unified **Resilience MCP Client** with a built-in circuit breaker to handle all external communication.
 - **Local Tooling**: Simple, logic-only tools (Time, File operations, User Profile DB updates) are executed directly in the backend using a specialized **Local Tools** connector to minimize network latency.
 - **Token Management**: Strict token counting and summarization logic is implemented to handle the smaller context windows of local models (e.g., LM Studio at 4096 tokens). The system uses an aggressive **Hybrid Memory** strategy (Summarization + Sliding Window) to prevent context overflows.
@@ -34,8 +34,13 @@ docker-compose --profile backend up -d
 # Run Database Migrations (Initialize tables inside container)
 docker-compose exec core_backend alembic upgrade head
 
-# Seed Initial Mock Data (Optional: for testing RAG/Profiles)
-docker-compose exec core_backend python scripts/seed.py
+# Seed Initial Mock Data (RAG, Admin User)
+docker-compose exec core_backend python scripts/seed_db.py
+
+# Maintenance: Clear memory (Long-term, Short-term, or All)
+# To clear LangGraph Checkpoints (checkpoints, checkpoint_writes, checkpoint_blobs): 
+# docker-compose exec core_backend python scripts/clear_memory.py --short-term
+docker-compose exec core_backend python scripts/clear_memory.py --all
 ```
 
 ## 4. Feature Implementation Details
@@ -59,20 +64,22 @@ docker-compose exec core_backend python scripts/seed.py
     2. *Fast Bypass*: Reply directly in the Telegram chat (e.g., "Approve {uuid}"). A webhook listener in the backend catches this, automatically hits the API, and resumes the action instantly without needing to log in to the portal.
 - **Widget Authentication & Personalized Memory**:
   - **Secure Auth Injection (Socket IO Payload)**: To identify users for personalization, the parent website securely passes an encrypted **JWT token** to the `iframe` via `postMessage`. Because browser-based WebSockets natively block custom HTTP Headers during the connection handshake, the frontend widget MUST pass the token explicitly in the `auth` payload object (e.g., `io(url, { auth: { token: "JWT" } })`). The backend drops any connection missing this payload.
-  - **JWT Keypair Encryption (RS256)**: Authentication is managed natively within the Smart-Bot project. The Python backend generates an **RS256 Keypair**. It uses the **Private Key** to securely sign and issue JWT tokens, while the `auth.py` middleware uses the **Public Key** via the `PyJWT` library to decode and validate incoming SocketIO requests.
+  - **JWT Keypair Encryption (RS256) & Bcrypt Hashing**: Authentication is managed natively within the Smart-Bot project. The Python backend generates an **RS256 Keypair** for JWT signing and uses `passlib` with `bcrypt` for secure password hashing in the `users` table. Primary `admin` credentials are seeded for development and testing.
   - **postMessage Origin Security**: To prevent arbitrary websites from embedding the iframe and injecting fake authentications via `postMessage`, the Preact application MUST hardcode a strict `event.origin` whitelist check before processing any incoming messages.
   - **PII Scrubber Middleware**: Before any user message leaves the backend to hit LiteLLM, it passes through `middleware/pii_scrubber.py`. Using strict Regex rules, sensitive data (Phone numbers, Passwords, Credit Cards) is replaced with `[REDACTED]` or `*****` to prevent PII leakage to cloud models and protect the raw logs in the `Conversations` table.
   - **Short-Term Memory (Persistent)**: LangGraph state is persisted using `AsyncPostgresSaver` bound to the `thread_id`. This ensures that even if the backend container restarts, the AI "remembers" the current conversation context (Short-term memory).
-  - *Long-Term Profile*: Background Celery tasks digest completed sessions, extract facts (Name, Job Title, interests), and update bespoke Postgres tables (`UserProfiles`, `Preferences`). These are queried and injected as System Prompts before graph execution for personalized generation.
+  - **Strict Server-side Session Initialization**: To ensure data consistency, the Frontend must never generate random `session_id`s. If no session exists in `localStorage`, the widget calls `POST /api/v1/chat/new-session` to receive an authoritative UUID generated and registered by the backend in the `session_metadata` table.
+  - *Long-Term Profile*: User-specific facts (Name, preferences) are managed via the `update_user_profile` tool. The system proactively calls this tool whenever a user provides personal details. Data is persisted in the `user_profiles` table using explicit PostgreSQL transactions (`async with conn.transaction()`) to ensure absolute data reliability and eliminate race conditions during high-concurrency LTM updates.
   - *Raw Conversation Persistence*: The exact, unadulterated dialogue transcripts are archived indefinitely in a dedicated `Conversations` table. This forms the foundational dataset for the continuous learning feedback loop. A separate async worker embeds these conversations via RAGFlow, actively increasing the bot's enterprise knowledge base from massive user interactions. **CRITICAL API DECOUPLING:** The Celery worker MUST push these transcripts exclusively via **RAGFlow's Official REST API** (using pagination to avoid memory crashes). Direct SQL inserts into RAGFlow's internal database are strictly forbidden to ensure schema independence.
 
 ## 5. Database, Storage, & Migrations
 - **PostgreSQL 16 (with `pgvector`)**: The central nervous system. 
-  - Schema includes tables for RAGFlow vectors, LangGraph thread state checkpoints, Long-Term Memory (UserProfiles), and raw Conversation Archives.
+  - Schema includes tables for RAGFlow vectors, LangGraph thread state checkpoints (`checkpoints`, `checkpoint_writes`, `checkpoint_blobs`), Long-Term Memory (UserProfiles), and raw Conversation Archives.
+  - *Note on LangGraph Memory Deletion*: LangGraph offloads large state data into `checkpoint_blobs` which references `checkpoints`. When programmatically deleting a session, delete from `checkpoint_blobs`, `checkpoint_writes`, and `checkpoints` using independent database transactions to avoid Foreign Key violation aborts.
   - **Versioning Vectors (Embedding Drift)**: The RAG Postgres schema explicitly includes an `embedding_version_id` column. When the embedding algorithm is upgraded in the future, the backend will only query vectors matching the active version ID, ensuring RAG search results never degrade into chaos due to model upgrade drift.
   - **Standardized Migrations**: All database schema changes are strictly managed using **Alembic** (the standard for SQLAlchemy). This prevents schema drift between developers/AI agents and ensures that applying new features (like adding a new profile field) is automatically version-controlled and reproducible across environments. Agents MUST run `alembic revision --autogenerate -m "..."` whenever `models.py` changes.
   - **Database Seeding**: A dedicated script (`scripts/seed.py`) is required to populate the database with baseline test data (e.g., mock UserProfiles, dummy Vector embeddings) after a fresh Docker spin-up, ensuring the AI can immediately test RAG workflows without manually inserting data.
-- **Redis (with Vector DB Support)**: Acts as a heavily utilized multi-tool. It manages high-speed semantic caching (via vector similarity searches for LiteLLM router fallback responses), operates as the fast message broker between API endpoints and Celery tasks, and handles user session lifecycle states. The native vector search capability in modern Redis makes it highly extensible for future real-time RAG operations.
+- **Redis (Secure & Stateful)**: Acts as a heavily utilized multi-tool with mandatory password authentication (`REDIS_PASSWORD`). It manages high-speed semantic caching, operates as the fast message broker, and handles user session lifecycle states.
 
 ## 6. AI Assistance Strategy & Prompts
 - Centralized inside `core_backend/app/prompts/`.

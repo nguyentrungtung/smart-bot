@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 
-import { MessageCircle, X, Maximize2, Minimize2 } from 'lucide-preact';
+import { MessageCircle, X, Maximize2, Minimize2, RefreshCcw } from 'lucide-preact';
 import { socketService } from './services/socket';
 import { iframeSync } from './services/iframeSync';
 import { MessageList } from './components/MessageList';
@@ -17,15 +17,13 @@ export function App() {
   const partialRef = useRef(""); // Latest value for the complete callback
   const thoughtRef = useRef(""); // Accumulates thought chunks as one string
   const [pendingMetadata, setPendingMetadata] = useState(null);
+  const metadataRef = useRef(null);
 
 
 
-  const [session_id] = useState(() => {
+  const [session_id, setSessionId] = useState(() => {
     const saved = localStorage.getItem("smart_bot_session_id");
-    if (saved) return saved;
-    const newId = "session-" + Math.random().toString(36).substring(7);
-    localStorage.setItem("smart_bot_session_id", newId);
-    return newId;
+    return saved || null; // Return null initially if missing, fetch it below
   });
 
   const [authError, setAuthError] = useState(false);
@@ -53,32 +51,54 @@ export function App() {
       }
     });
 
-    // 4. Standalone/First-load Auto Login
-    const fetchGuestToken = async () => {
+    // 4. Standalone/First-load Auto Login & Strict Session Check
+    const initializeAuthAndSession = async () => {
       const url = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
       try {
-        const response = await fetch(`${url}/auth/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_id: "guest-" + Math.random().toString(36).substring(7) })
-        });
-        if (response.ok) {
-          const data = await response.json();
-          console.log("Acquired Guest Token for development");
-          socketService.setTokens(data.access_token, data.refresh_token);
+        let isConnected = false;
+
+        // Try auto-login if no token
+        if (!socketService.accessToken) {
+          const response = await fetch(`${url}/api/v1/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_id: "guest-" + Math.random().toString(36).substring(7) })
+          });
+          if (response.ok) {
+            const data = await response.json();
+            console.log("Acquired Guest Token for development");
+            socketService.setTokens(data.access_token, data.refresh_token);
+            socketService.connect();
+            isConnected = true;
+          }
+        } else {
           socketService.connect();
+          isConnected = true;
+        }
+
+        // Enforce Strict Server-side Session
+        if (isConnected && !session_id) {
+          console.log("No session found. Requesting explicit new session from Backend...");
+          const sessionResp = await fetch(`${url}/api/v1/chat/new-session`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${socketService.accessToken}`
+            }
+          });
+          if (sessionResp.ok) {
+            const sData = await sessionResp.json();
+            setSessionId(sData.session_id);
+            localStorage.setItem("smart_bot_session_id", sData.session_id);
+            console.log("Strict Session acquired:", sData.session_id);
+          }
         }
       } catch (err) {
-        console.error("Failed to fetch guest token:", err);
+        console.error("Initialization failed:", err);
       }
     };
 
-    // Attempt auto-connect or auto-login
-    if (socketService.accessToken) {
-      socketService.connect();
-    } else {
-      fetchGuestToken();
-    }
+    initializeAuthAndSession();
 
     socketService.on("message_stream", (data) => {
       console.log("FE Debug: Received message_stream chunk:", data.chunk);
@@ -99,7 +119,7 @@ export function App() {
       if (partialRef.current || thoughtRef.current) {
         const finalContent = partialRef.current;
         const finalThinking = thoughtRef.current;
-        const interaction_id = pendingMetadata?.interaction_id || null;
+        const interaction_id = metadataRef.current?.interaction_id || null;
 
         setMessages((prev) => [...prev, {
           sender: 'bot',
@@ -115,11 +135,13 @@ export function App() {
       setLoading(false);
       setCurrentThought("");
       setPendingMetadata(null);
+      metadataRef.current = null;
     });
 
     socketService.on("message_metadata", (data) => {
       console.log("FE Debug: Received message_metadata:", data);
       setPendingMetadata(data);
+      metadataRef.current = data;
     });
 
     // Listen for multimodal capabilities from backend
@@ -203,6 +225,42 @@ export function App() {
   };
 
 
+  const handleNewSession = async () => {
+    const url = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+    try {
+      const response = await fetch(`${url}/api/v1/chat/new-session`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${socketService.accessToken}`
+        },
+        body: JSON.stringify({ old_session_id: session_id })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        console.log("Session reset success:", data.session_id);
+
+        // 1. Update State & Storage
+        setSessionId(data.session_id);
+        localStorage.setItem("smart_bot_session_id", data.session_id);
+
+        // 2. Clear Messages UI
+        setMessages([{
+          sender: 'bot',
+          text: "✨ Cuộc hội thoại hoàn toàn mới đã được bắt đầu. Em có thể hỗ trợ gì cho anh/chị ạ?"
+        }]);
+
+        // 3. Reconnect socket with new thread awareness (though socket uses thread_id per message, 
+        // a fresh connection ensures no stale state)
+        socketService.disconnect();
+        socketService.connect();
+      }
+    } catch (err) {
+      console.error("Failed to reset session:", err);
+    }
+  };
+
+
   const [isMaximized, setIsMaximized] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 400, height: 620 });
   const [isResizing, setIsResizing] = useState(false);
@@ -270,6 +328,13 @@ export function App() {
             <div className="status-dot"></div>
             <h2>Smart-Bot Advisor</h2>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.25rem' }}>
+              <button
+                className="icon-btn"
+                onClick={handleNewSession}
+                title="New Conversation"
+              >
+                <RefreshCcw size={18} />
+              </button>
               <button
                 className="icon-btn"
                 onClick={toggleMaximized}

@@ -33,6 +33,7 @@ router_settings:
   routing_strategy: simple-shuffle
   redis_host: redis
   redis_port: 6379
+  redis_password: os.environ/REDIS_PASSWORD
   cache_responses: true
   enable_pre_call_checks: false
   fallbacks:
@@ -41,5 +42,5 @@ router_settings:
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
-  database_url: os.environ/DATABASE_URL
   store_model_in_db: False
+  proxy_batch_write_log_to_s3: False

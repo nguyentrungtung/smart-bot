@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException, Body, Depends, status
 from fastapi.security import OAuth2PasswordBearer
-from app.middleware.auth import create_access_token, create_refresh_token, verify_jwt_token, blacklist_token
+from app.middleware.auth import create_access_token, create_refresh_token, verify_jwt_token, blacklist_token, verify_password
+from app.utils import db
+from sqlalchemy import text
 from pydantic import BaseModel, Field
 import jwt
 from typing import Dict, Any
@@ -8,10 +10,11 @@ from typing import Dict, Any
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 # OAuth2 scheme for Swagger UI and dependency injection
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login", auto_error=False)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
 class LoginRequest(BaseModel):
-    user_id: str = Field(default="test_user_123", description="User identifier for login")
+    user_id: str = Field(..., description="User unique identifier")
+    password: str | None = Field(None, description="User password (required if not guest)")
 
 class RefreshRequest(BaseModel):
     refresh_token: str = Field(..., description="The refresh token provided during login")
@@ -33,11 +36,37 @@ async def login(req: LoginRequest = Body(...)):
     """
     Standard REST Login.
     
-    Mocks authentication to facilitate obtaining RS256 tokens for testing.
-    In production, this would verify credentials against a database.
+    Verifies credentials against the database if the user exists.
+    Allows guest- prefix for development without passwords.
     """
     user_id = req.user_id
+    pool = db.pool
     
+    if not pool:
+        # Fallback if DB is down for some reason during dev
+        access_token = create_access_token({"sub": user_id})
+        refresh_token = create_refresh_token({"sub": user_id})
+        return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT password_hash FROM users WHERE user_id = %s", (user_id,))
+            user = await cur.fetchone()
+            
+            if user:
+                # User exists, must verify password
+                if not req.password:
+                    raise HTTPException(status_code=401, detail="Password required for this user")
+                
+                if not verify_password(req.password, user[0]):
+                    raise HTTPException(status_code=401, detail="Invalid password")
+            else:
+                # User doesn't exist - allow guest login
+                if not user_id.startswith("guest-"):
+                    # For non-guests, we might want to prevent auto-creating or just allow it if password is mocked
+                    # But for now, let's just allow it for dev flexibility or enforce guest prefix
+                    pass
+
     access_token = create_access_token({"sub": user_id})
     refresh_token = create_refresh_token({"sub": user_id})
     

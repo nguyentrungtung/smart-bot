@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    # Embedding Settings
+    EMBEDDING_DIM: int = 768  # Standardized to 768 for both Local and Cloud compatibility
+
     # LiteLLM
     LITELLM_API_BASE: str = "http://localhost:4000"
     LITELLM_API_KEY: str = "sk-litellm-proxy"
@@ -32,8 +35,11 @@ class Settings(BaseSettings):
     MCP_INTERNAL_API_KEY: str = "dev-secure-mcp-key-123"
 
     # Memory Settings (Hybrid)
-    MAX_HISTORY_TOKENS: int = 3000  # Strict limit (with buffer) for LM Studio window
-    SUMMARY_THRESHOLD: int = 1500   # Trigger summarization earlier to keep context clean
+    # MAX_HISTORY_TOKENS: int = 1000  # Lowered further for stability
+    # SUMMARY_THRESHOLD: int = 600    # Summarize even earlier
+    MAX_HISTORY_TOKENS: int = 500  # Lowered further for testing
+    SUMMARY_THRESHOLD: int = 300    # Summarize even earlier
+    MAX_RESPONSE_TOKENS: int = 500  # Prevent AI from generating too long a response
 
     # Telegram HITL
     TELEGRAM_BOT_TOKEN: str = "" # If empty, HITL will mock approval output

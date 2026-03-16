@@ -32,7 +32,16 @@ async def update_user_profile(user_id: str, args: Dict[str, Any]) -> Dict[str, A
         }
         
         await ltm.update_profile(user_id, profile_updates)
-        return {"status": "success", "message": "Profile updated successfully."}
+        
+        # Log specifically what was learned
+        learned_summary = []
+        if name: learned_summary.append(f"Name: {name}")
+        if preferences: learned_summary.append(f"Prefs: {json.dumps(preferences)}")
+        if new_facts: learned_summary.append(f"Facts: {', '.join(new_facts)}")
+        
+        logger.info(f"✨ LTM Update for {user_id}: { ' | '.join(learned_summary) if learned_summary else 'No changes' }")
+        
+        return {"status": "success", "message": "Thông tin của bạn đã được ghi nhớ để hỗ trợ tốt hơn lần sau."}
     except Exception as e:
         logger.error(f"Local Tool Failure: update_user_profile for {user_id}: {str(e)}")
         return {"status": "error", "message": str(e)}

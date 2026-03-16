@@ -32,6 +32,7 @@ core_backend/                         # Backend Service (FastAPI + LangGraph)
 |   |-- main.py                       # FastAPI & Socket.IO Entrypoint
 |   |-- api/                          # Interface layer
 |   |   |-- auth_routes.py            # JWT-based REST authentication
+|   |   |-- chat_routes.py            # Session management & History cleanup
 |   |   |-- socket_handler.py         # Socket.IO logic for real-time chat & streaming
 |   |-- config/                       # Application configuration
 |   |   |-- settings.py               # Pydantic settings loading from .env
@@ -74,7 +75,9 @@ core_backend/                         # Backend Service (FastAPI + LangGraph)
 |           |-- summarizer.py         # Context compression & memory management
 |           |-- tool_defs.py          # Dynamic tool schema generation
 |           |-- tools.py              # Unified tool execution engine
-|-- scripts/                          # DevOps & Initialization tools
+|-- scripts/                          # DevOps & Maintenance tools
+|   |-- seed_db.py                    # Seeds DB with Admin & RAG data
+|   |-- clear_memory.py               # Maintenance: Truncate Short/Long term memory (e.g. `python scripts/clear_memory.py --short-term` to clear LangGraph checkpoints, blobs, and writes)
 |-- tests/                            # Pytest test suite
 |-- alembic.ini                       # Migration config
 |-- Dockerfile                        # Backend container recipe
@@ -91,6 +94,7 @@ services:
 
   redis:
     image: redis:alpine
+    command: redis-server --requirepass ${REDIS_PASSWORD}
     ports: ["6379:6379"]
     profiles: ["infra", "backend"]
 
@@ -100,6 +104,7 @@ services:
     extra_hosts: ["host.docker.internal:host-gateway"]
     environment:
       - LOCAL_MODEL_API_BASE=${LOCAL_MODEL_API_BASE:-http://host.docker.internal:1234/v1}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     profiles: ["infra", "backend"]
 
   core_backend:
@@ -117,7 +122,14 @@ services:
 ## 🚫 What NOT To Do (Strict Anti-Patterns)
 1. **NO** Linux/Bash: Host is Windows 11 PowerShell.
 2. **NO** `HS256`: Strictly use **RS256** RSA Keypairs for JWT.
-3. **NO** Plain Redis Blacklist: Always set TTL on blacklisted tokens.
-4. **NO** Unified MCP hardcoding: Use the `mcp.client` wrapper for resilience.
-5. **NO** Skipping Local Tools: Simple tasks (Time, File) must be in `local_tools.py`, NOT MCP.
-6. **NO** Context Overflow: Always respect `MAX_HISTORY_TOKENS` and use `summarizer.py`.
+3. **NO** Unauthenticated Redis: Always use `REDIS_PASSWORD`.
+4. **NO** Vector Dimensions != 768: Standardize to **768** for Local/Cloud sync.
+5. **NO** Implicit DB Commits: Always use `async with conn.transaction()` in DB tools.
+6. **NO** Plain Redis Blacklist: Always set TTL on blacklisted tokens.
+7. **NO** Unified MCP hardcoding: Use the `mcp.client` wrapper for resilience.
+8. **NO** Skipping Local Tools: Simple tasks (Time, File) must be in `local_tools.py`, NOT MCP.
+9. **NO** Context Overflow: Always respect `MAX_HISTORY_TOKENS` and use `summarizer.py`.
+12. **NO** Single Transaction for Checkpoint Deletes: LangGraph Postgres Checkpointer uses `checkpoints`, `checkpoint_writes`, and `checkpoint_blobs`. Always use separate connection/transaction blocks per table when deleting to avoid Foreign Key locking and aborted transactions.
+13. **NO** Client-side Session Logic: Strictly use the `/new-session` API to initialize `session_id`; NEVER generate random IDs in the Frontend.
+14. **NO** Plain-text Passwords: Password hashing MUST use `passlib` with `bcrypt`.
+
