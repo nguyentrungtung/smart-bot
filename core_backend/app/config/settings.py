@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     MAX_HISTORY_TOKENS: int = 500  # Lowered further for testing
     SUMMARY_THRESHOLD: int = 300    # Summarize even earlier
     MAX_RESPONSE_TOKENS: int = 500  # Prevent AI from generating too long a response
+    MAX_HISTORY_MESSAGES: int = 10 # Threshold for summarization based on message count
+    LITELLM_RETRY_COUNT: int = 3
 
     # Telegram HITL
     TELEGRAM_BOT_TOKEN: str = "" # If empty, HITL will mock approval output
@@ -54,6 +56,10 @@ class Settings(BaseSettings):
     KEYS_DIR: str = os.getenv("KEYS_DIR", "/app/.keys")
 
 
+
+    # Debug & Logging
+    LOG_LEVEL: str = "INFO"
+    DEBUG_LANGCHAIN: bool = False
 
     class Config:
         env_file = ".env"

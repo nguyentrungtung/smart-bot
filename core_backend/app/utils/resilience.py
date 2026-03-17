@@ -74,6 +74,40 @@ class CircuitBreaker:
             self._on_failure()
             raise e
 
+def async_retry(
+    retries: int = 3,
+    delay: float = 1.0,
+    backoff: float = 2.0,
+    exceptions: tuple = (Exception,),
+):
+    """
+    Decorator for retrying async functions with exponential backoff.
+    """
+    def decorator(func: Callable):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            attempt_count = 0
+            current_delay = delay
+            
+            while attempt_count < retries:
+                try:
+                    return await func(*args, **kwargs)
+                except exceptions as e:
+                    attempt_count += 1
+                    if attempt_count >= retries:
+                        logger.error(f"Retry: Execution failed after {retries} attempts: {e}")
+                        raise e
+                    
+                    logger.warning(
+                        f"Retry: Attempt {attempt_count}/{retries} failed: {e}. "
+                        f"Retrying in {current_delay:.2f}s..."
+                    )
+                    await asyncio.sleep(current_delay)
+                    current_delay *= backoff
+            return await func(*args, **kwargs)
+        return wrapper
+    return decorator
+
 # Registry to persist state across requests in the application lifecycle
 _registry: Dict[str, CircuitBreaker] = {}
 

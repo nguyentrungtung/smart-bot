@@ -1,0 +1,293 @@
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+MSG 5: type=ai, content_type=str
+MSG 6: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+MSG 5: type=ai, content_type=str
+MSG 6: type=human, content_type=str
+MSG 7: type=ai, content_type=str
+MSG 8: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+MSG 5: type=ai, content_type=str
+MSG 6: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+MSG 5: type=ai, content_type=str
+MSG 6: type=human, content_type=str
+MSG 7: type=ai, content_type=str
+MSG 8: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=human, content_type=str
+MSG 2: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=human, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=NoneType
+MSG 2: type=tool, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+MSG 5: type=ai, content_type=str
+MSG 6: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+MSG 5: type=ai, content_type=str
+MSG 6: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=NoneType
+MSG 2: type=tool, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=NoneType
+MSG 2: type=tool, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+MSG 5: type=ai, content_type=str
+MSG 6: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=NoneType
+MSG 2: type=tool, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+MSG 5: type=ai, content_type=str
+MSG 6: type=human, content_type=str
+MSG 7: type=ai, content_type=NoneType
+MSG 8: type=tool, content_type=str
+MSG 9: type=ai, content_type=str
+MSG 10: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=NoneType
+MSG 2: type=tool, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+MSG 5: type=ai, content_type=str
+MSG 6: type=human, content_type=str
+MSG 7: type=ai, content_type=NoneType
+MSG 8: type=tool, content_type=str
+MSG 9: type=ai, content_type=str
+MSG 10: type=human, content_type=str
+MSG 11: type=ai, content_type=str
+MSG 12: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+MSG 5: type=ai, content_type=str
+MSG 6: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+MSG 5: type=ai, content_type=str
+MSG 6: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=tool, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=tool, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str
+MSG 5: type=ai, content_type=str
+MSG 6: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=str
+MSG 2: type=human, content_type=str

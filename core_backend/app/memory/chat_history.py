@@ -80,6 +80,27 @@ class ChatHistoryTracker:
         except Exception as e:
             logger.error(f"Failed to rate interaction {interaction_id}: {str(e)}")
 
+    async def ensure_session_exists(self, session_id: str, user_id: str):
+        """
+        Idempotent session registration. 
+        Ensures metadata exists without overhead of separate SELECT.
+        """
+        if not self.pool:
+            return
+            
+        try:
+            async with self.pool.connection() as conn:
+                async with conn.transaction():
+                    async with conn.cursor() as cur:
+                        query = """
+                        INSERT INTO session_metadata (session_id, user_id) 
+                        VALUES (%s, %s) 
+                        ON CONFLICT (session_id) DO NOTHING
+                        """
+                        await cur.execute(query, (session_id, user_id))
+        except Exception as e:
+            logger.warning(f"Lazy-registration failed for {session_id}: {e}")
+
     async def create_session(self, session_id: str, user_id: str):
         if not self.pool:
             return

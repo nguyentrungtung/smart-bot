@@ -6,7 +6,12 @@
 # REQUIRED BOILERPLATE: API Socket Handler
 async def handle_message(sid, data):
     session_id = data.get("session_id")
-    # Use session_lock from app.middleware.auth
+    interaction_id = str(uuid.uuid4()) # REQUIRED: Generate tracing ID
+    
+    # Set context for structured logging
+    session_id_context.set(session_id)
+    interaction_id_context.set(interaction_id)
+
     async with session_lock(redis_client, session_id, timeout=30) as acquired:
         if not acquired: return
         # ... process LangGraph stream ...
@@ -92,6 +97,14 @@ window.addEventListener("message", (event) => {
   - Accumulate partial `tool_calls` iteratively across stream chunks (`tc.index`, `tc.id`, `tc.function.arguments`).
   - Scan buffers for explicit delimiters (`<thinking>...</thinking>`).
   - Actively emit `message_stream` for final text output, and `thought_stream` exclusively for filtered reasoning blocks using `sio.emit()` mapped back to the active LangGraph thread context.
+
+## 11. Resilience & Retries
+- **LLM Reliability**: All LiteLLM calls in nodes MUST be wrapped with `@async_retry`.
+- **Circuit Breaker**: Use `get_circuit_breaker()` for high-risk external integrations.
+
+## 12. Context Truncation (Smart Summarizer)
+- **Multi-Trigger**: The summarizer MUST check both `estimate_tokens(messages)` and `len(messages)`. 
+- **Thresholds**: Defaults are typically `300 tokens` or `10 messages`.
 
 ## 12. Multimodal Processing (Image & Voice)
 - **Native Data Flow**: For models like Gemini 2.5-flash, send media as `base64` fragments inside the content array. Use `app/multimodal/processor.py` to standardize FE payloads into LiteLLM blocks.

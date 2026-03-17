@@ -2,7 +2,12 @@ import logging
 import json
 import sys
 import datetime
-from typing import Any
+import contextvars
+from typing import Any, Optional
+
+# Context variables for tracing across async tasks
+interaction_id_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("interaction_id", default=None)
+session_id_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("session_id", default=None)
 
 class JsonFormatter(logging.Formatter):
     """
@@ -20,6 +25,12 @@ class JsonFormatter(logging.Formatter):
             "line": record.lineno,
         }
         
+        # Add tracing IDs from context
+        i_id = interaction_id_context.get()
+        s_id = session_id_context.get()
+        if i_id: log_entry["interaction_id"] = i_id
+        if s_id: log_entry["session_id"] = s_id
+
         # Add extra attributes if present (e.g. session_id)
         if hasattr(record, "extra"):
             log_entry["extra"] = record.extra

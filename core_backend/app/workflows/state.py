@@ -14,6 +14,7 @@ class GraphState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     session_id: str
     user_id: str
+    interaction_id: str
     # Holds RAG results
     rag_documents: List[str]
     # Hybrid Memory: Cumulative summary of older messages

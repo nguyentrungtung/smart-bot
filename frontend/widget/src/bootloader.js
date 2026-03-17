@@ -56,14 +56,23 @@
             }
         });
 
-        // 4. Inject Mock Auth Token for Demo purposes 
-        // In production, the parent site would handle this
-        setTimeout(() => {
-            iframe.contentWindow.postMessage({
-                type: 'SMART_BOT_AUTH',
-                token: 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy'
-            }, WIDGET_URL);
-        }, 2000);
+        // 4. Handle Authentication
+        // In production, the parent site provides the token via a global variable or data attribute
+        const AUTH_TOKEN = window.SMART_BOT_TOKEN || null;
+
+        if (AUTH_TOKEN) {
+            const sendAuth = () => {
+                iframe.contentWindow.postMessage({
+                    type: 'SMART_BOT_AUTH',
+                    token: AUTH_TOKEN
+                }, WIDGET_URL);
+            };
+
+            // Send auth after a short delay to ensure iframe is ready
+            setTimeout(sendAuth, 1500);
+        } else {
+            console.warn("Smart-Bot: No AUTH_TOKEN found. Local guest mode may be used.");
+        }
     }
 
     if (document.readyState === 'complete') {

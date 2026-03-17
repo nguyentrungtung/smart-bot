@@ -16,6 +16,7 @@ from app.workflows.nodes.message_converter import (
     has_multimodal_user_message,
 )
 from app.workflows.nodes.stream_handler import handle_streaming, handle_nonstreaming
+from app.utils.resilience import async_retry
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableConfig
 
@@ -109,9 +110,17 @@ async def generate_response(
     current_model = settings.LLM_MODEL
 
     logger.info(
-        f"LLM call: model={current_model}, multimodal={has_multimodal}, "
+        f"[{state.get('interaction_id')}] LLM call: model={current_model}, multimodal={has_multimodal}, "
         f"stream={should_stream}, tools={'yes' if use_tools else 'no'}"
     )
+
+    if settings.LOG_LEVEL.upper() == "DEBUG":
+        print("\n--- [LLM PROMPT DEBUG] ---")
+        print(f"SYSTEM PROMPT:\n{system_content}")
+        print("\nMESSAGE HISTORY SENT TO LLM:")
+        for i, m in enumerate(litellm_messages):
+            print(f"  [{i}] {m['role'].upper()}: {str(m['content'])[:200]}...")
+        print("---------------------------\n")
 
     # ── 4. Call LiteLLM (via proxy — proxy speaks OpenAI protocol) ─
     try:
@@ -120,17 +129,22 @@ async def generate_response(
             f"content_types={[type(m.get('content')).__name__ for m in litellm_messages]}"
         )
 
-        response = await litellm.acompletion(
-            model=current_model,
-            messages=litellm_messages,
-            tools=use_tools,
-            tool_choice="auto" if use_tools else None,
-            api_base=settings.LITELLM_API_BASE,
-            api_key=settings.LITELLM_API_KEY,
-            custom_llm_provider="openai",  # Proxy speaks OpenAI protocol
-            stream=should_stream,
-            max_tokens=settings.MAX_RESPONSE_TOKENS, # Explicit limit for local models
-        )
+        # Define the call as a local function to apply the retry decorator
+        @async_retry(retries=settings.LITELLM_RETRY_COUNT, delay=1.0)
+        async def call_llm():
+            return await litellm.acompletion(
+                model=current_model,
+                messages=litellm_messages,
+                tools=use_tools,
+                tool_choice="auto" if use_tools else None,
+                api_base=settings.LITELLM_API_BASE,
+                api_key=settings.LITELLM_API_KEY,
+                custom_llm_provider="openai",
+                stream=should_stream,
+                max_tokens=settings.MAX_RESPONSE_TOKENS,
+            )
+
+        response = await call_llm()
 
         # ── 5. Handle response ────────────────────────────────
         if should_stream:

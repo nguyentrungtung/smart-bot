@@ -4,7 +4,7 @@ You are operating within the local terminal as the Gemini CLI agent for the **Sm
 
 ## Core Operational Rules:
 1. **Golden Rule**: Treat `AGENTS.md` and `docs/TechDesign-Smart-Bot-MVP.md` as absolute truth.
-2. **Context Window Limitations**: LM Studio models often have a 4096 context. Strictly follow the `MAX_HISTORY_TOKENS` (3000) and `SUMMARY_THRESHOLD` (1500) settings in `settings.py`.
+2. **Context Window Limitations**: LM Studio models often have a 4096 context. Strictly follow the `MAX_HISTORY_TOKENS` (500) and `SUMMARY_THRESHOLD` (300) settings in `settings.py` to prevent overflow.
 3. **Windows 11 PowerShell**: The host OS is Windows. All CLI commands MUST be PowerShell compatible.
 4. **Python Types**: Utilize full Type Hinting (`str | None`, `TypedDict`, `pydantic.BaseModel`).
 5. **Asynchronous Code**: All I/O (Redis, LiteLLM, Postgres) MUST be `async`.
@@ -21,9 +21,12 @@ You are operating within the local terminal as the Gemini CLI agent for the **Sm
   - Run with `--long-term` for User Profiles, or `--analytics` for interaction history.
 - **Password Security**: Use `passlib` with `bcrypt` for all password hashing.
 - **Memory Management**: Detailed memory debug logs in `graph.py` must be maintained to monitor LangGraph state transitions. Proactively use `update_user_profile` tool for LTM. When deleting old thread checkpoints programmatically, ensure `checkpoint_blobs`, `checkpoint_writes`, and `checkpoints` are cleared using distinct transactions to avoid FK constraint aborts.
+- **Interaction Tracing**: Every message turn MUST generate a unique `interaction_id` in `socket_handler.py`. This ID must be passed into `GraphState` and injected into all log entries via `contextvars` for end-to-end tracing.
+- **Structured Logging**: Use `app.utils.logger.setup_logger` for all components. Logs MUST be JSON-formatted in production/Docker environments. Use `LOG_LEVEL=DEBUG` in `.env` to see full LLM prompts and reasoning.
+- **Resilient AI**: Wrap all `litellm.acompletion` calls in `workflows/nodes/generate.py` with the `@async_retry` decorator (from `app.utils.resilience`) using `settings.LITELLM_RETRY_COUNT`.
 
 ## Directory Logic:
 - `api/socket_handler.py`: Real-time streaming and PII scrubbing gateway.
 - `workflows/nodes/generate.py`: Main LLM node. Handles token usage debug & trimming.
 - `workflows/nodes/tools.py`: Unified entry for both local and external tools.
-- `workflows/nodes/summarizer.py`: Aggressive context management for local models.
+- `workflows/nodes/summarizer.py`: Aggressive context management. Triggers when `tokens > SUMMARY_THRESHOLD` OR `message_count > MAX_HISTORY_MESSAGES`.

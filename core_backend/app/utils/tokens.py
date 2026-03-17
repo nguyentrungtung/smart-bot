@@ -15,6 +15,7 @@ def estimate_tokens(messages_or_text) -> int:
     """
     Consolidated token estimation logic.
     WORM (Read Many): Sums 'token_count' from message metadata if available.
+    Handle multimodal content by focusing on text and estimating image tokens.
     """
     if isinstance(messages_or_text, str):
         return calculate_tokens(messages_or_text)
@@ -31,8 +32,21 @@ def estimate_tokens(messages_or_text) -> int:
             chunk_count = count
         else:
             # Fallback if metadata is missing
-            content = str(getattr(m, "content", "")) if not isinstance(m, dict) else str(m.get("content", ""))
-            chunk_count = calculate_tokens(content)
+            content = getattr(m, "content", "") if not isinstance(m, dict) else m.get("content", "")
+            
+            if isinstance(content, list):
+                # Multimodal content - list of blocks
+                for block in content:
+                    if not isinstance(block, dict):
+                        continue
+                    if block.get("type") == "text":
+                        chunk_count += calculate_tokens(block.get("text", ""))
+                    elif block.get("type") in ["image_url", "input_audio"]:
+                        # Standard image token estimate (e.g. OpenAI high-res) is ~765-1100.
+                        # We use a conservative estimate for our local calculations.
+                        chunk_count += 300 
+            else:
+                chunk_count = calculate_tokens(str(content))
         
         total += chunk_count
         # logger.debug(f"TOKEN_DEBUG: Msg {i} ({type(m).__name__}) = {chunk_count} tokens")

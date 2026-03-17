@@ -10,11 +10,13 @@ from app.multimodal.capabilities import get_capabilities
 from app.multimodal.processor import MultimodalProcessor
 from app.schemas.socket_io import MessageIn
 import jwt
+import uuid
 from app.utils.redis import get_redis
 from app.memory.chat_history import ChatHistoryTracker
 from app.utils.db import get_pool
 from langchain_core.messages import HumanMessage, AIMessage
 from contextlib import asynccontextmanager
+from app.utils.logger import interaction_id_context, session_id_context
 
 logger = logging.getLogger("socket_handler")
 
@@ -60,7 +62,9 @@ async def connect(sid, environ, auth):
         
 @sio.event
 async def disconnect(sid):
-    logger.info(f"Client disconnected: {sid}")
+    async with sio.session(sid) as session:
+        user_id = session.get("user_id")
+    logger.info(f"Client disconnected: {sid} (user_id: {user_id})")
 
 @sio.on("message")
 async def handle_message(sid, data):
@@ -111,17 +115,32 @@ async def handle_message(sid, data):
         from app.utils.tokens import calculate_tokens
         user_tokens = calculate_tokens(input_content)
 
+        interaction_id = str(uuid.uuid4())
+        
+        # Set tracing context
+        sid_token = session_id_context.set(session_id)
+        iid_token = interaction_id_context.set(interaction_id)
+
+        msg_id = str(uuid.uuid4())
         inputs = {
-            "messages": [HumanMessage(content=input_content, additional_kwargs={"token_count": user_tokens})],
+            "messages": [HumanMessage(content=input_content, id=msg_id, additional_kwargs={"token_count": user_tokens})],
             "session_id": session_id,
             "user_id": user_id,
+            "interaction_id": interaction_id,
             "thinking": [],
             "metadata": {}
         }
 
-        # 3.5 Log User Message for tracing
+        # 3.5 Log User Message & Lazy-Register Session
         db_pool = get_pool()
         history_tracker = ChatHistoryTracker(db_pool)
+
+        # OPTIMIZATION: Check Redis first to see if session is already registered in metadata
+        # Prevents redundant DB calls for every single message.
+        reg_key = f"session_registered:{session_id}"
+        if not await client.get(reg_key):
+            await history_tracker.ensure_session_exists(session_id, user_id)
+            await client.set(reg_key, "1", ex=86400) # Cache for 24h
         
         user_msg_text = content
         # If content is empty but we have an image, note it
@@ -151,10 +170,22 @@ async def handle_message(sid, data):
             logger.info(f"MEMORY DEBUG: Invoking graph with thread_id={session_id}, input messages count={len(inputs['messages'])}")
             print(f"--- DEBUG SOCKET: Starting astream for {session_id} (thread_id={session_id}) ---")
             final_state = {}
-            async for chunk in agent_graph.astream(inputs, config, stream_mode="values"):
-                final_state = chunk
-                msg_count = len(chunk.get('messages', []))
-                print(f"--- DEBUG SOCKET: Yielded a chunk (total messages in state: {msg_count}) ---")
+            async for chunk in agent_graph.astream(inputs, config, stream_mode="updates"):
+                for node_name, state_update in chunk.items():
+                    print(f"--- [LANGGRAPH] Node '{node_name}' finished execution ---")
+                    
+                    if state_update and isinstance(state_update, dict):
+                        for k, v in state_update.items():
+                            final_state[k] = v
+                    else:
+                        print(f"--- [LANGGRAPH] Warning: Node '{node_name}' returned non-dict update: {type(state_update)}")
+                
+                msg_count = len(final_state.get('messages', []))
+                print(f"--- DEBUG SOCKET: Step complete ---")
+            
+            # --- CRITICAL: Fetch real final state from LangGraph to handle reducers (add_messages) correctly ---
+            graph_state = await agent_graph.aget_state(config)
+            final_state = graph_state.values
             
             # 5. Log Assistant Message
             messages = final_state.get("messages", [])
@@ -179,8 +210,12 @@ async def handle_message(sid, data):
 
             
         except Exception as e:
-            logger.error(f"Graph execution error: {str(e)}")
+            logger.error(f"[{interaction_id}] Graph execution error: {str(e)}")
             await sio.emit('error', {'detail': 'An error occurred during generation.'}, room=sid)
+        finally:
+            # Clear tracing context
+            session_id_context.reset(sid_token)
+            interaction_id_context.reset(iid_token)
 
 @sio.on("message_rate")
 async def handle_rating(sid, data):

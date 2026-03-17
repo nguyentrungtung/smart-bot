@@ -7,6 +7,7 @@ from app.workflows.nodes.rag_search import rag_search
 from app.workflows.nodes.fetch_profile import fetch_profile
 from app.workflows.nodes.profile_analyzer import profile_analyzer
 from app.workflows.nodes.summarizer import summarize_history
+from app.workflows.nodes.vision_scrubber import scrub_multimodal_content
 from app.config.settings import settings
 
 logger = logging.getLogger("langgraph_builder")
@@ -64,12 +65,17 @@ workflow.add_node("tools", execute_tools)
 workflow.add_node("sensitive_tools", execute_tools) # Same function, different node for HITL
 workflow.add_node("profile_analyzer", profile_analyzer)
 workflow.add_node("summarize_history", summarize_history)
+workflow.add_node("vision_scrubber", scrub_multimodal_content)
 
 # Edges
 workflow.add_edge(START, "fetch_profile")
 workflow.add_edge(START, "rag_search")
 workflow.add_edge("fetch_profile", "agent")
 workflow.add_edge("rag_search", "agent")
+
+# Parallel Background Scrubber
+workflow.add_edge(START, "vision_scrubber")
+workflow.add_edge("vision_scrubber", END)
 
 workflow.add_conditional_edges("agent", should_continue, {
     "tools": "tools", 
@@ -90,25 +96,36 @@ workflow.add_edge("profile_analyzer", END)
 
 # --- Lazy-init compiled graph with checkpointer ---
 _compiled_graph = None
+_last_checkpointer_active = None
 
 def get_agent_graph():
     """
-    Returns the compiled agent graph WITH the Postgres checkpointer.
-    Must be called AFTER app lifespan has initialized db.checkpointer.
-    This enables short-term memory: LangGraph auto-loads/saves message history per thread_id.
+    Returns the compiled agent graph.
+    Dynamic Checkpointer Awareness: 
+    If the checkpointer state changes (e.g. DB initialized or fell back), it recompiles.
     """
-    global _compiled_graph
-    if _compiled_graph is None:
-        from app.utils.db import get_checkpointer
-        checkpointer = get_checkpointer()
-        if checkpointer is None:
-            logger.error("CRITICAL: Checkpointer is None! Memory will NOT work. Is the DB pool initialized?")
-            # Fallback: compile without checkpointer (no memory)
+    global _compiled_graph, _last_checkpointer_active
+    
+    from app.utils.db import get_checkpointer
+    current_checkpointer = get_checkpointer()
+    
+    # Recompile only if graph hasn't been built OR checkpointer has changed
+    if _compiled_graph is None or current_checkpointer != _last_checkpointer_active:
+        if current_checkpointer is None:
+            logger.warning("MEM_DEBUG: No checkpointer available. Compiling in EPHEMERAL mode (no memory).")
             _compiled_graph = workflow.compile(interrupt_before=["sensitive_tools"])
         else:
-            logger.info("Compiling LangGraph with AsyncPostgresSaver checkpointer — Short-Term Memory ENABLED")
-            _compiled_graph = workflow.compile(
-                checkpointer=checkpointer,
-                interrupt_before=["sensitive_tools"]
-            )
+            logger.info(f"MEM_DEBUG: Compiling LangGraph with {type(current_checkpointer).__name__}")
+            try:
+                _compiled_graph = workflow.compile(
+                    checkpointer=current_checkpointer,
+                    interrupt_before=["sensitive_tools"]
+                )
+            except Exception as e:
+                logger.error(f"MEM_DEBUG: Compilation failed with checkpointer: {e}. Falling back to No-Memory mode.")
+                _compiled_graph = workflow.compile(interrupt_before=["sensitive_tools"])
+        
+        _last_checkpointer_active = current_checkpointer
+        
     return _compiled_graph
+

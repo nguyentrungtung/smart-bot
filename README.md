@@ -51,7 +51,13 @@ Smart-Bot là một giải pháp Chatbot Agentic hiện đại được xây d�
    docker compose --profile backend --profile tools logs -f
    ```
 
-4. **Seed dữ liệu mẫu (RAG)**:
+4. **Áp dụng Database Migration**:
+   Sau khi các service khởi động xong, bạn cần khởi tạo các bảng trong PostgreSQL:
+   ```bash
+   docker compose exec core_backend alembic upgrade head
+   ```
+
+5. **Seed dữ liệu mẫu (RAG & Admin)**:
    ```bash
    docker compose exec core_backend python scripts/seed_db.py
    ```
@@ -109,6 +115,9 @@ docker compose exec core_backend alembic revision --autogenerate -m "Mô tả th
 
 # 2. Áp dụng migration vào database hiện tại
 docker compose exec core_backend alembic upgrade head
+
+# 3. Khởi tạo thủ công bảng Memory (LangGraph Checkpoints) nếu chưa thấy xuất hiện
+docker compose exec core_backend python scripts/setup_checkpointer.py
 ```
 
 *Lưu ý: Hệ thống đã được cấu hình để Alembic tự động bỏ qua (ignore) các bảng của LiteLLM và LangGraph khi so sánh schema.*

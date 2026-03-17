@@ -103,6 +103,9 @@ async def handle_streaming(
             if "</thinking>" in buffer:
                 think_part, rest = buffer.split("</thinking>", 1)
                 if think_part and sio and sid:
+                    from app.config.settings import settings
+                    if settings.LOG_LEVEL.upper() == "DEBUG":
+                        print(f"--- [AI THINKING] --- {think_part}")
                     await sio.emit("thought_stream", {"content": think_part}, room=sid)
                 buffer = rest
                 in_thinking = False

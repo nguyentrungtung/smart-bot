@@ -31,6 +31,53 @@ class UserMeResponse(BaseModel):
     user_id: str = Field(..., description="The unique identifier of the user")
     type: str = Field(..., description="Token type (access/refresh)")
 
+class ExchangeTokenRequest(BaseModel):
+    visitor_id: str = Field(..., description="The unique ID of the visitor on the partner website")
+    metadata: Dict[str, Any] | None = Field(default=None, description="Optional metadata about the visitor")
+
+class ExchangeTokenResponse(BaseModel):
+    access_token: str = Field(..., description="JWT access token for the visitor")
+    visitor_id: str = Field(..., description="The ID assigned to the visitor")
+
+@router.post("/exchange-token", response_model=ExchangeTokenResponse)
+async def exchange_token(
+    req: ExchangeTokenRequest = Body(...),
+    partner_id: str = Depends(oauth2_scheme)
+):
+    """
+    Server-to-Server Token Exchange.
+    
+    A partner website (authenticated via their own token) calls this to get 
+     a scoped JWT for one of their visitors.
+    """
+    if not partner_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    try:
+        # Validate the partner's token first
+        payload = await verify_jwt_token(partner_id)
+        authenticated_partner_id = payload.get("sub")
+        
+        # Create a scoped visitor ID to prevent collision across partners
+        # Format: partner:visitor
+        scoped_visitor_id = f"{authenticated_partner_id}:{req.visitor_id}"
+        
+        # Sign a new token for the visitor using RS256
+        # We don't necessarily need a refresh token for visitors as they are transient
+        visitor_token = create_access_token({
+            "sub": scoped_visitor_id,
+            "partner": authenticated_partner_id,
+            "metadata": req.metadata or {}
+        })
+        
+        return {
+            "access_token": visitor_token,
+            "visitor_id": scoped_visitor_id
+        }
+    except Exception as e:
+        logger.error(f"Token exchange failed: {str(e)}")
+        raise HTTPException(status_code=401, detail="Invalid partner credentials or token")
+
 @router.post("/login", response_model=TokenResponse, status_code=status.HTTP_200_OK)
 async def login(req: LoginRequest = Body(...)):
     """

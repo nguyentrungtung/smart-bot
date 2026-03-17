@@ -19,8 +19,8 @@ async def summarize_history(state: GraphState) -> Dict[str, Any]:
     from app.utils.tokens import estimate_tokens
     total_est_tokens = estimate_tokens(messages)
     
-    # Only summarize if we are over the threshold
-    if total_est_tokens < settings.SUMMARY_THRESHOLD:
+    # Only summarize if we are over the threshold (tokens OR message count)
+    if total_est_tokens < settings.SUMMARY_THRESHOLD and len(messages) < settings.MAX_HISTORY_MESSAGES:
         return {"summary": current_summary}
 
     logger.info(f"SUMMARIZER: Threshold exceeded ({total_est_tokens:.0f} tokens). Generating summary...")
