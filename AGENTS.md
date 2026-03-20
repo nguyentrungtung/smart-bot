@@ -132,4 +132,12 @@ services:
 12. **NO** Single Transaction for Checkpoint Deletes: LangGraph Postgres Checkpointer uses `checkpoints`, `checkpoint_writes`, and `checkpoint_blobs`. Always use separate connection/transaction blocks per table when deleting to avoid Foreign Key locking and aborted transactions.
 13. **NO** Client-side Session Logic: Strictly use the `/new-session` API to initialize `session_id`; NEVER generate random IDs in the Frontend.
 14. **NO** Plain-text Passwords: Password hashing MUST use `passlib` with `bcrypt`.
+15. **NO** Guest Login: Authentication must always verify `user_id` and `password` against the `users` table; no unauthenticated token generation is allowed.
+16. **NO** Missing Embeddings: The `documents` table MUST contain both `content` and `embedding` (Vector 768) columns for RAG.
+17. **NO** Red Dot Ignored: The UI includes a Status Dot (Green: Connected, Red: Auth Error). If it turns red, the AI should advise the user to authenticate.
+
+## 📁 Updated UI/UX Patterns
+- **Status Dot**: Header-level indicator for real-time authentication status.
+- **Auto-Refresh**: Socket sessions automatically attempt token refresh on expiry.
+- **Partner Handshake**: Website integration uses `postMessage` with `SMART_BOT_AUTH` type to securely inject guest tokens from partner backends.
 

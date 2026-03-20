@@ -112,6 +112,11 @@
   box-shadow: 0 0 8px #4ade80aa;
 }
 
+.status-dot.error {
+  background: #ef4444;
+  box-shadow: 0 0 8px #ef4444aa;
+}
+
 /* Message List */
 .message-list {
   flex: 1;

@@ -165,15 +165,20 @@ docker-compose exec core_backend python scripts/clear_memory.py --all
 ---
 
 ## 🛡️ Security & Auth
+ 
+ Dự án sử dụng cặp khóa RSA để ký và xác thực JWT.
 
-Dự án sử dụng cặp khóa RSA để ký và xác thực JWT.
-- **Private Key**: Dùng để tạo token (thường ở phía Web App của bạn).
-- **Public Key**: `/app/.keys/public_key.pem` (Backend dùng để giải mã).
+### Xác thực người dùng
+- **Cơ chế**: Bắt buộc đăng nhập bằng `user_id` và `password`. Không cho phép Guest Login tự do.
+ - **Status Dot**: Widget có chấm xanh (Đã xác thực) và chấm đỏ (Lỗi xác thực/Hết hạn).
+- **Tài khoản dùng thử** (Sau khi chạy `seed_db.py`):
+  - **Admin**: `admin` / `admin123`
+  - **User**: `user68` / `user123`
+- **Tích hợp Website vệ tinh**: Sử dụng `postMessage` với type `SMART_BOT_AUTH` để truyền Token từ trang cha vào Iframe.
 
-Để tạo Token test, bạn có thể tham khảo logic trong `test_jwt_auth.py` hoặc sử dụng tài khoản test mặc định (sau khi chạy seed):
-- **Username**: `admin`
-- **Password**: `admin123`
-- **Endpoint**: `POST /api/v1/auth/login`
+### Key Management
+- **Private Key**: Dùng để tạo token.
+- **Public Key**: `/app/.keys/public_key.pem` (Backend dùng để xác minh).
 
 ---
 

@@ -90,29 +90,34 @@ async def login(req: LoginRequest = Body(...)):
     pool = db.pool
     
     if not pool:
-        # Fallback if DB is down for some reason during dev
-        access_token = create_access_token({"sub": user_id})
-        refresh_token = create_refresh_token({"sub": user_id})
-        return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, 
+            detail="Authentication service is currently unavailable (DB Down)"
+        )
 
     async with pool.connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute("SELECT password_hash FROM users WHERE user_id = %s", (user_id,))
             user = await cur.fetchone()
             
-            if user:
-                # User exists, must verify password
-                if not req.password:
-                    raise HTTPException(status_code=401, detail="Password required for this user")
-                
-                if not verify_password(req.password, user[0]):
-                    raise HTTPException(status_code=401, detail="Invalid password")
-            else:
-                # User doesn't exist - allow guest login
-                if not user_id.startswith("guest-"):
-                    # For non-guests, we might want to prevent auto-creating or just allow it if password is mocked
-                    # But for now, let's just allow it for dev flexibility or enforce guest prefix
-                    pass
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED, 
+                    detail="Invalid user_id or password"
+                )
+            
+            # User exists, must verify password
+            if not req.password:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail="Password is required"
+                )
+            
+            if not verify_password(req.password, user[0]):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED, 
+                    detail="Invalid user_id or password"
+                )
 
     access_token = create_access_token({"sub": user_id})
     refresh_token = create_refresh_token({"sub": user_id})

@@ -70,6 +70,10 @@ export function App() {
             socketService.setTokens(data.access_token, data.refresh_token);
             socketService.connect();
             isConnected = true;
+          } else if (response.status === 401 || response.status === 403) {
+            console.warn("Guest login restricted (security enforced)");
+            setAuthError(true);
+            socketService.clearTokens();
           }
         } else {
           socketService.connect();
@@ -205,11 +209,14 @@ export function App() {
       }
     }
 
-    console.log(`--- [FE_SOCKET] Sending Message ---
-    Text length: ${text?.length || 0}
-    Image present: ${!!attachments.image} (${attachments.image?.length || 0} chars)
-    Audio present: ${!!attachments.audio}
-    Payload Session: ${session_id}`);
+    if (!socketService.socket?.connected) {
+      setMessages((prev) => [...prev, {
+        sender: 'bot',
+        text: "🚫 Unable to send. Please refresh or authenticate again."
+      }]);
+      setLoading(false);
+      return;
+    }
 
     socketService.emit("message", payload);
   };
@@ -325,7 +332,10 @@ export function App() {
           )}
 
           <div className="chat-header">
-            <div className="status-dot"></div>
+            <div
+              className={`status-dot ${authError ? 'error' : ''}`}
+              title={authError ? "Authentication Required" : "Connected"}
+            ></div>
             <h2>Smart-Bot Advisor</h2>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.25rem' }}>
               <button
