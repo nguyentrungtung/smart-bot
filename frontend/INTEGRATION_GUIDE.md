@@ -1,149 +1,174 @@
-# Hướng dẫn Tích hợp Smart-Bot Widget vào Website
+# 🛡️ Hướng dẫn Tích hợp Smart-Bot Widget (Developer Guide)
 
-Tài liệu này hướng dẫn cách nhúng hộp chat Smart-Bot vào bất kỳ website nào (hỗ trợ React, Vue, HTML tĩnh, v.v.).
-
----
-
-## 🏗 Cơ chế Hoạt động
-
-Widget được xây dựng dưới dạng **Iframe Isolated**. Điều này đảm bảo:
-1. **An toàn**: Code của widget không xung đột với CSS/JS của trang web chính.
-2. **Bảo mật**: Sử dụng giao thức `postMessage` để truyền nhận Token JWT và đồng bộ kích thước (Resize).
-3. **Hiệu năng**: Widget tải độc lập, không làm chậm trang chính.
+Chào mừng bạn đến với hướng dẫn tích hợp **Smart-Bot Advisor**. Hệ thống được thiết kế để nhúng vào bất kỳ website nào chỉ với **một dòng code**, tương tự như Google Analytics hoặc Intercom.
 
 ---
 
-## ⚡ Cách 1: Sử dụng Bootloader Script (Khuyên dùng)
+Hệ thống được thiết kế để nhúng vào bất kỳ website nào chỉ với **một đoạn mã bootloader**, tương tự như Google Analytics, Intercom hoặc Facebook Pixel.
 
-Đây là cách đơn giản nhất. Bạn chỉ cần thêm một đoạn script vào cuối thẻ `<body>`.
+---
 
-### 🛡️ Cơ chế Xác thực Server-to-Server (Khuyên dùng cho Sản phẩm)
+## ⚡ 1. Tích hợp Nhanh (Google Analytics Style)
 
-Để đảm bảo bảo mật và quản lý người dùng theo từng đối tác (Partner), bạn nên sử dụng luồng "Token Exchange".
-
-#### Quy trình 3 bước:
-
-**Bước 1: Server của bạn (Partner) đăng nhập vào Smart-Bot**
-Dùng Token/Tài khoản Partner đã được cấp để lấy Access Token cho Server.
-`POST /api/v1/auth/login`
-
-**Bước 2: Đổi Token cho khách hàng (Visitor)**
-Server của bạn gọi API này để lấy một Token JWT (RS256) dành riêng cho khách hàng đang truy cập web của bạn.
-`POST /api/v1/auth/exchange-token`
-- **Body**: `{ "visitor_id": "ID_NGUOI_DUNG_CUA_BAN" }`
-- **Header**: `Authorization: Bearer <TOKEN_SERVER_BUOC_1>`
-
-**Bước 3: Nhúng Token vào Frontend**
-Kết quả trả về sẽ là một Token an toàn. Bạn nhúng nó vào code HTML của trang web chính:
+Đây là cách tích hợp chuyên nghiệp nhất. Copy đoạn mã sau vào trước thẻ đóng `</body>`:
 
 ```html
 <script>
-  window.SMART_BOT_TOKEN = "TOKEN_JWT_DÀNH_RIÊNG_CHO_VISITOR_TỪ_BƯỚC_2";
+  (function(w,d,s,o,f,js,fjs){
+    w['SmartBotObject']=o;w[o]=w[o]||function(){(w[o].q=w[o].q||[]).push(arguments)},w[o].l=1*new Date();
+    js=d.createElement(s),fjs=d.getElementsByTagName(s)[0];
+    js.id=o;js.src=f;js.async=1;fjs.parentNode.insertBefore(js,fjs);
+  }(window,document,'script','smartbot','http://localhost:5173/embed.js'));
+
+  // Khởi tạo Chatbot với Token (Nếu có)
+  smartbot('init', {
+    token: "ACCESS_TOKEN_CỦA_NGƯỜI_DÙNG"
+  });
 </script>
-<script src="https://your-domain.com/bootloader.js"></script>
+```
+
+**Cơ chế hoạt động:**
+- **Asynchronous**: Script tải không đồng bộ, không làm chậm tốc độ load trang web chính.
+- **Command Queue**: Bạn có thể gọi `smartbot('init', ...)` ngay cả khi script chưa tải xong, các câu lệnh sẽ được đưa vào hàng đợi và xử lý ngay khi script sẵn sàng.
+- **Auto-Injection**: Tự động nhận diện domain và thiết lập Iframe bảo mật.
+
+**Ưu điểm:**
+- Tự động tạo Container và Iframe.
+- Tự động xử lý Resize (Thu nhỏ/Phóng to) mượt mà.
+- Đã được tối ưu về Z-index để luôn hiển thị trên cùng.
+- Hỗ trợ truyền Token JWT an toàn qua `postMessage`.
+- Hỗ trợ cập nhật Token mới mà không cần tải lại trang (Token Rotation).
+
+---
+
+---
+
+## 🏗️ 2. Quản lý vòng đời Token (Token Rotation)
+
+Vì lý do bảo mật, Access Token thường có thời hạn ngắn (mặc định **60 phút**). Để duy trì chatbot lâu dài mà không bị gián đoạn, website vệ tinh cần thực hiện cơ chế **xoay vòng token**.
+
+### Quy trình chuẩn:
+1. **Login ban đầu**: Website gọi API `/auth/login` (hoặc `/auth/exchange-token`) để lấy bộ đôi `access_token` và `refresh_token`.
+2. **Cập nhật định kỳ**: Trước khi `access_token` hết hạn, sử dụng `refresh_token` để lấy Access Token mới và nạp vào Bot qua lệnh `init`.
+
+### Mã triển khai mẫu:
+```javascript
+let tokens = { access: null, refresh: null };
+
+// 1. Hàm lấy Token (Thường gọi khi người dùng bắt đầu vào web)
+async function authenticateBot() {
+  const resp = await fetch('http://localhost:8000/api/v1/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: 'visitor_123', password: 'password_neu_co' })
+  });
+  const data = await resp.json();
+  tokens.access = data.access_token;
+  tokens.refresh = data.refresh_token;
+
+  // Nạp token vào Bot
+  smartbot('init', { token: tokens.access });
+
+  // Thiết lập tự động refresh sau mỗi 45 phút (đảm bảo trước khi Access Token 1h hết hạn)
+  setInterval(refreshBotSession, 45 * 60 * 1000);
+}
+
+// 2. Hàm làm mới Session dùng Refresh Token
+async function refreshBotSession() {
+  console.log("Refreshing access token...");
+  const resp = await fetch('http://localhost:8000/api/v1/auth/refresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: tokens.refresh })
+  });
+  
+  if (resp.ok) {
+    const data = await resp.json();
+    tokens.access = data.access_token;
+    // Cập nhật token mới cho Bot (Bot nhận tức thì, không load lại trang)
+    smartbot('init', { token: tokens.access });
+  }
+}
+
+authenticateBot();
+```
+
+**Ưu điểm:**
+- **Duy trì lâu dài**: Chatbot có thể chạy liên tục miễn là `refresh_token` còn hạn.
+- **Mượt mà**: Việc cập nhật token diễn ra ngầm, người dùng không hề hay biết.
+- **Bảo mật**: Chỉ truyền `access_token` ngắn hạn cho Frontend Iframe.
+
+---
+
+## 🏗️ 3. Quy trình Xác thực Bảo mật (Server-to-Server)
+
+Để bảo vệ dữ liệu và định danh người dùng chính xác, Smart-Bot sử dụng cơ chế **Token Exchange**.
+
+### Sơ đồ hoạt động:
+1. **Server của bạn** gọi API Smart-Bot để lấy Token cho khách truy cập (Visitor).
+2. **Server của bạn** trả về Token này vào HTML của website (biến `window.SMART_BOT_TOKEN`).
+3. **Embed Script** tự động đọc Token này và xác thực với Bot.
+
+#### Bước 1: Đổi Token cho khách (Visitor)
+Server của bạn gọi API sau (đã có Header Authorization của Partner):
+```bash
+POST /api/v1/auth/exchange-token
+{
+  "visitor_id": "user_id_trong_he_thong_cua_ban",
+  "metadata": { "name": "Nguyễn Văn A", "tier": "VIP" }
+}
+```
+
+#### Bước 2: Nhúng vào Frontend
+```html
+<script>
+  window.SMART_BOT_TOKEN = "TOKEN_NHẬN_ĐƯỢC_TỪ_BƯỚC_1";
+</script>
 ```
 
 ---
 
-### 🎙 Microphone cho Voice Chat
-**Có bật được.** Trong file `bootloader.js`, Iframe đã được cấu hình thuộc tính `allow="microphone"`. 
+## 🛠️ 4. Tích hợp Thủ công (Manual Integration)
 
-Tuy nhiên, **điều kiện bắt buộc** để Microphone hoạt động là Website khách (Parent Site) và Website chứa Bot (Iframe Site) đều phải chạy trên **HTTPS** (hoặc `localhost` khi dev). Nếu chạy trên HTTP, trình duyệt sẽ chặn quyền truy cập Microphone vì lý do bảo mật.
-
-### Ưu điểm:
-- Tự động tạo container, iframe.
-- Tự động xử lý thu nhỏ/phóng to (responsive).
-- Người dùng không cần viết CSS.
-- **Tự động truyền nhận Token** từ biến toàn cục `window.SMART_BOT_TOKEN`.
-
----
-
-## 🛠 Cách 2: Tự tạo Iframe (Manual Integration)
-
-Dành cho các dự án cần kiểm soát sâu hơn về layout.
-
-### 1. HTML & CSS
-Thêm container và iframe vào trang của bạn:
+Nếu bạn muốn kiểm soát vị trí hoặc CSS của Iframe, bạn có thể tự tạo:
 
 ```html
-<!-- Container để giữ widget cố định ở góc màn hình -->
-<div id="smart-bot-container" style="
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    z-index: 999999;
-    width: 80px;
-    height: 80px;
-    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    overflow: hidden;
-    border-radius: 50%;
-">
-    <iframe 
-        id="smart-bot-iframe"
-        src="https://your-smart-bot-widget.com" 
-        style="width: 100%; height: 100%; border: none; background: transparent;"
-        allow="microphone"
-    ></iframe>
+<div id="smart-bot-wrapper" style="position:fixed; bottom:20px; right:20px; width:80px; height:80px;">
+  <iframe 
+    src="http://localhost:5173" 
+    allow="microphone" 
+    style="width:100%; height:100%; border:none;">
+  </iframe>
 </div>
 ```
 
-### 2. JavaScript Đồng bộ (Resize & Auth)
-Bạn cần lắng nghe sự kiện từ widget để cập nhật kích thước container:
-
-```javascript
-const iframe = document.getElementById('smart-bot-iframe');
-const container = document.getElementById('smart-bot-container');
-const WIDGET_URL = "https://your-smart-bot-widget.com";
-
-// 1. Gửi Token JWT để xác thực
-window.onload = () => {
-    const userJWT = "YOUR_USER_JWT_TOKEN";
-    
-    // Đợi 1 giây để iframe kịp load script
-    setTimeout(() => {
-        iframe.contentWindow.postMessage({
-            type: "SMART_BOT_AUTH",
-            token: userJWT
-        }, WIDGET_URL);
-    }, 1000);
-};
-
-// 2. Lắng nghe yêu cầu Resize từ Widget
-window.addEventListener('message', (event) => {
-    // Bảo mật: Kiểm tra đúng origin
-    if (event.origin !== WIDGET_URL) return;
-
-    if (event.data.type === "SMART_BOT_RESIZE") {
-        const { width, height } = event.data;
-        
-        // Cập nhật kích thước container
-        container.style.width = typeof width === 'number' ? width + 'px' : width;
-        container.style.height = typeof height === 'number' ? height + 'px' : height;
-
-        // Nếu chiều cao lớn (đang mở chat), đổi border-radius
-        if (parseInt(height) > 100) {
-            container.style.borderRadius = '16px';
-        } else {
-            container.style.borderRadius = '50%';
-        }
-    }
-});
-```
+**Lưu ý quan trọng:** Bạn phải tự lắng nghe sự kiện `SMART_BOT_RESIZE` để thay đổi kích thước `div` bọc ngoài, nếu không hộp chat sẽ bị cắt (clipping).
 
 ---
 
-## 🔒 Bảo mật (Security)
+## 🎙️ 4. Điều kiện để Voice Chat (Microphone) hoạt động
 
-1. **Origin Whitelist**: Trong file `src/services/iframeSync.js` của widget, bạn PHẢI thêm domain của client vào mảng `allowedOrigins`.
-2. **Content Security Policy (CSP)**: Nếu trang web chính có CSP, hãy cho phép iframe từ domain của bạn: `frame-src https://your-smart-bot-widget.com`.
-3. **JWT**: Luôn truyền JWT qua `postMessage` thay vì Query String để tránh rò rỉ token trong log server.
+Để người dùng có thể sử dụng chức năng giọng nói:
+1. **HTTPS là bắt buộc**: Cả trang web của bạn (Parent) và Smart-Bot Widget phải chạy trên HTTPS. Trình duyệt sẽ chặn Microphone trên HTTP.
+2. **Iframe Permission**: Phải có thuộc tính `allow="microphone"` trong thẻ iframe (Embed Script đã tự động thêm thuộc tính này).
 
 ---
 
-## 🎨 Tinh chỉnh Giao diện
+## 🎨 5. Tùy chỉnh (Customization)
 
-Widget hỗ trợ Responsive tự động. Khi người dùng nhấn nút "Maximize" trong widget, nó sẽ gửi sự kiện `SMART_BOT_RESIZE` với các giá trị:
-- `width`: `calc(100vw - 4rem)`
-- `height`: `calc(100vh - 8rem)`
+| Thuộc tính | Mô tả |
+| :--- | :--- |
+| `window.SMART_BOT_TOKEN` | Token JWT dùng để xác thực người dùng. |
+| `window.SMART_BOT_THEME` | (Sắp có) Chế độ 'light' hoặc 'dark'. |
+| `Z-Index` | Mặc định là `2147483647` để đảm bảo luôn ở trên cùng. |
 
-Đảm bảo container của bạn không bị giới hạn bởi thuộc tính `max-width` của trang cha.
+---
+
+## � 6. Kiểm tra & Troubleshooting
+
+- **Lỗi 401/403**: Token hết hạn hoặc sai `visitor_id`. Hãy kiểm tra lại log tại `/auth/exchange-token`.
+- **Widget không hiển thị**: Kiểm tra xem `http://localhost:5173/embed.js` có tải được không (Network tab trong Chrome DevTools).
+- **Không thể gõ chữ**: Đảm bảo Iframe không bị che khuất bởi một thẻ `div` trong suốt khác của trang web chính.
+
+---
+*Tài liệu này được cập nhật vào: 2026-03-20*

@@ -129,6 +129,51 @@ docker compose exec core_backend python scripts/setup_checkpointer.py
 Backend sử dụng **FastAPI** và kết nối qua **Socket.IO** để hỗ trợ streaming streaming và trạng thái "AI đang suy nghĩ" (Thinking).
 
 - **Health Check**: `GET http://localhost:8000/health`
+
+### Tài liệu API (Interactive Docs)
+Khi backend đang chạy, bạn có thể truy suất tài liệu API đầy đủ và thử nghiệm trực tiếp tại:
+- **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **ReDoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+
+### Ví dụ CURL (API Testing)
+
+**1. Đăng nhập (Lấy Token):**
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/login \
+     -H "Content-Type: application/json" \
+     -d '{"user_id": "admin", "password": "admin123"}'
+```
+
+**2. Trao đổi Token Partner (Partner Exchange):**
+*Lưu ý: Partner cần được cung cấp Token quản trị trước để gọi API này.*
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/exchange-token \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <PARTNER_TOKEN>" \
+     -d '{"visitor_id": "cust_99", "metadata": {"source": "website-vệ-tinh"}}'
+```
+
+**3. Làm mới Access Token (Refresh Token):**
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/refresh \
+     -H "Content-Type: application/json" \
+     -d '{"refresh_token": "<YOUR_REFRESH_TOKEN>"}'
+```
+
+**4. Thu hồi Token / Đăng xuất (Revoke Token):**
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/logout \
+     -H "Authorization: Bearer <ACCESS_TOKEN>"
+```
+
+**5. Khởi tạo Session mới:**
+```bash
+curl -X POST http://localhost:8000/api/v1/chat/new-session \
+     -H "Authorization: Bearer <ACCESS_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{}'
+```
+
 - **Socket.IO Endpoint**: `ws://localhost:8000/socket.io/`
 
 ### Kiểm tra tính năng (API/Logic)

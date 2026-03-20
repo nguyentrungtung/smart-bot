@@ -6,14 +6,15 @@ class IframeSyncService {
         this.allowedOrigins = [
             "http://localhost:3000",
             "http://127.0.0.1:3000",
-            "http://localhost:5173" // Vite default dev port
+            "http://localhost:5173",
+            "http://localhost:8080"
         ];
     }
 
     /**
      * Periodically measures the widget's DOM height and broadcasts it to the parent.
      */
-    startResizing(elementSelector = "#app") {
+    startResizing(elementSelector = "body") {
         const reportHeight = () => {
             const element = document.querySelector(elementSelector);
             if (!element) return;

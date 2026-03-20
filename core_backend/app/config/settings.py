@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     GUARDS_ENABLED: bool = True
 
     # SocketIO CORS Origins
-    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173"]
+    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://localhost:8080"]
     
     # MCP Security
     MCP_SERVER_URL: str = "http://localhost:8001"

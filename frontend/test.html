@@ -63,45 +63,70 @@
             dynamically resizes itself based on its internal content using a 2-way postMessage bridge.</p>
     </div>
 
-    <!-- The Iframe Wrapper -->
-    <div id="smart-bot-container">
-        <iframe id="smart-bot-iframe" src="http://localhost:3000" title="Smart-Bot Advisor" allow="microphone"></iframe>
-
-    </div>
-
+    <!-- ⚡ Tích hợp Smart-Bot Advisor (Login & Auto-Refresh Token) -->
     <script>
-        const iframe = document.getElementById('smart-bot-iframe');
-        const container = document.getElementById('smart-bot-container');
+        (function (w, d, s, o, f, js, fjs) {
+            w['SmartBotObject'] = o; w[o] = w[o] || function () { (w[o].q = w[o].q || []).push(arguments) }, w[o].l = 1 * new Date();
+            js = d.createElement(s), fjs = d.getElementsByTagName(s)[0];
+            js.id = o; js.src = f; js.async = 1; fjs.parentNode.insertBefore(js, fjs);
+        }(window, document, 'script', 'smartbot', 'http://localhost:5173/embed.js'));
 
-        // SECURITY: Whitelist the widget's origin
-        const WIDGET_ORIGIN = "http://localhost:3000";
+        // Lưu trữ Token ở Frontend trang cha
+        let botTokens = { access: null, refresh: null };
 
-        // 1. Send Auth Token to Widget using postMessage
-        window.onload = () => {
-            const mockJWT = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0X3VzZXJfMTIzIiwibmFtZSI6IlRlc3QgVXNlciIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3MzA0NzI5MCwiZXhwIjoxNzczMTMzNjkwfQ.u_O9ImtM142Z7DBKf8rvkLWa6ZIaVBLYNZ9hl_gsu5SMPMNjO0j3OfxzTva_fUzy-77Pt1DrwlOjnMbyvSVfAdA8j9EtEjU6zr5qTb6gB-a43BreL1fOn5DKZsoItqd6aFc6G6cTUZTQkhh3ILEQDMKBUs3-t_NEa74L38fDO32yNL3TcQAhRbAf9gZNJhTd1kvloCo69uSsptQ28Z-ZbsoACepvDPmBjsVpw_Mc8JOdMY-2ki3Gd2ZGuev2R5TkMjhWm-nq7gMPaNGsq7jbQmjPR7WzqkLBLz6CKO4K694flj0wY62n8odVGzoY6e8HJfrCubJywn0U1uKwMEbZeg";
+        /**
+         * 1. Thực hiện Đăng nhập vào Smart-Bot Backend
+         */
+        async function authenticateChatbot() {
+            try {
+                // Gọi tới backend để lấy token (Lưu ý: Partner nên proxy qua Backend của mình để bảo mật)
+                const response = await fetch('http://localhost:8000/api/v1/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: "user68",
+                        password: "password123"
+                    })
+                });
 
-            // Wait a bit for iframe to load before sending auth
-            setTimeout(() => {
-                iframe.contentWindow.postMessage({
-                    type: "SMART_BOT_AUTH",
-                    token: mockJWT
-                }, WIDGET_ORIGIN);
-                console.log("Sent Auth Token to Widget");
-            }, 1000);
-        };
+                const data = await response.json();
+                botTokens.access = data.access_token;
+                botTokens.refresh = data.refresh_token;
 
+                // Nạp Access Token vào Bot
+                smartbot('init', { token: botTokens.access });
+                console.log("Chatbot authenticated successfully.");
 
-        // 2. Listen for Resize Events from Widget
-        window.addEventListener('message', (event) => {
-            if (event.origin !== WIDGET_ORIGIN) return;
+                // 2. Thiết lập tự động Refresh Token mỗi 45 phút (Đảm bảo refresh trước khi Access Token 1h hết hạn)
+                setInterval(refreshBotToken, 45 * 60 * 1000);
 
-            if (event.data.type === "SMART_BOT_RESIZE") {
-                const { width, height } = event.data;
-                // Update container dimensions
-                container.style.width = width + 'px';
-                container.style.height = height + 'px';
+            } catch (err) {
+                console.error("Authentication failed:", err);
             }
-        });
+        }
+
+        /**
+         * 3. Hàm làm mới Token dùng Refresh Token
+         */
+        async function refreshBotToken() {
+            console.log("Rotating bot token...");
+            const response = await fetch('http://localhost:8000/api/v1/auth/refresh', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: botTokens.refresh })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                botTokens.access = data.access_token;
+                // Cập nhật Token mới cho Bot mà không cần reload iframe
+                smartbot('init', { token: botTokens.access });
+                console.log("Token rotated successfully.");
+            }
+        }
+
+        // Bắt đầu quy trình
+        authenticateChatbot();
     </script>
 </body>
 

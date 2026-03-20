@@ -4,3 +4,11 @@ MSG 1: type=ai, content_type=NoneType
 MSG 2: type=tool, content_type=str
 MSG 3: type=ai, content_type=str
 MSG 4: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+VISION_SCRUBBER: Checking state...
+MSG 0: type=human, content_type=str
+MSG 1: type=ai, content_type=NoneType
+MSG 2: type=tool, content_type=str
+MSG 3: type=ai, content_type=str
+MSG 4: type=human, content_type=str

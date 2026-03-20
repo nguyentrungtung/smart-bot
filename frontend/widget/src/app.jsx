@@ -312,7 +312,6 @@ export function App() {
   };
 
   const toggleWidget = () => setIsOpen(!isOpen);
-
   return (
     <div className={`widget-container ${isMaximized ? 'maximized' : ''}`}>
       {isOpen && (
