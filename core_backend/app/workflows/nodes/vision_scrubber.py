@@ -12,8 +12,8 @@ async def scrub_multimodal_content(state: GraphState) -> Dict[str, Any]:
     Background-capable node that detects base64 images/audio in history
     and replaces them with text descriptions to save tokens in future turns.
     """
-    with open("vision_scrubber_debug.log", "a", encoding="utf-8") as f:
-        f.write(f"VISION_SCRUBBER: Checking state...\n")
+    # with open("vision_scrubber_debug.log", "a", encoding="utf-8") as f:
+    #     f.write(f"VISION_SCRUBBER: Checking state...\n")
     
     messages = state.get("messages", [])
     if not messages:
@@ -28,8 +28,8 @@ async def scrub_multimodal_content(state: GraphState) -> Dict[str, Any]:
         role = getattr(msg, "type", None) or (msg.get("type") if isinstance(msg, dict) else None)
         content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else None)
         
-        with open("vision_scrubber_debug.log", "a", encoding="utf-8") as f:
-            f.write(f"MSG {i}: type={role}, content_type={type(content).__name__}\n")
+        # with open("vision_scrubber_debug.log", "a", encoding="utf-8") as f:
+        #    f.write(f"MSG {i}: type={role}, content_type={type(content).__name__}\n")
 
         # We only scrub HumanMessages that have list content (multimodal)
         if role == "human" and isinstance(content, list):
@@ -42,8 +42,8 @@ async def scrub_multimodal_content(state: GraphState) -> Dict[str, Any]:
             
             if has_raw_data:
                 msg_id = getattr(msg, "id", None) or (msg.get("id") if isinstance(msg, dict) else None)
-                with open("vision_scrubber_debug.log", "a", encoding="utf-8") as f:
-                    f.write(f"VISION_SCRUBBER: Found raw data in msg {msg_id}\n")
+                # with open("vision_scrubber_debug.log", "a", encoding="utf-8") as f:
+                #    f.write(f"VISION_SCRUBBER: Found raw data in msg {msg_id}\n")
                 
                 logger.info(f"SCRUBBER: Detected raw multimodal data in message {msg_id or 'unknown'}")
                 
@@ -103,8 +103,8 @@ async def scrub_multimodal_content(state: GraphState) -> Dict[str, Any]:
                         logger.warning("SCRUBBER: Found multimodal message but it has no ID. Cannot replace in checkpoint.")
 
                 except Exception as e:
-                    with open("vision_scrubber_debug.log", "a", encoding="utf-8") as f:
-                        f.write(f"SCRUBBER ERROR: {str(e)}\n")
+                    # with open("vision_scrubber_debug.log", "a", encoding="utf-8") as f:
+                    #    f.write(f"SCRUBBER ERROR: {str(e)}\n")
                     logger.error(f"SCRUBBER ERROR: {str(e)}")
                     # Continue to other messages if one fails
                     continue

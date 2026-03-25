@@ -209,6 +209,39 @@ export function App() {
       }
     }
 
+    if (!session_id) {
+      console.warn("FE Debug: Attempted to send message without session_id. Re-initializing...");
+      // Try to re-initialize session if it's missing
+      const url = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+      try {
+        const sessionResp = await fetch(`${url}/api/v1/chat/new-session`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${socketService.accessToken}`
+          }
+        });
+        if (sessionResp.ok) {
+          const sData = await sessionResp.json();
+          setSessionId(sData.session_id);
+          localStorage.setItem("smart_bot_session_id", sData.session_id);
+          payload.session_id = sData.session_id; // Update payload with new ID
+          console.log("FE Debug: Emergency session acquired:", sData.session_id);
+        } else {
+          setMessages((prev) => [...prev, {
+            sender: 'bot',
+            text: "❌ Lỗi khởi tạo phiên làm việc. Vui lòng tải lại trang."
+          }]);
+          setLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.error("FE Error: Emergency session failed:", err);
+        setLoading(false);
+        return;
+      }
+    }
+
     if (!socketService.socket?.connected) {
       setMessages((prev) => [...prev, {
         sender: 'bot',

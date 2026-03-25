@@ -75,8 +75,15 @@ async def handle_message(sid, data):
     """
     # 0. Validate basic fields
     try:
-        session_id = data.get("session_id", "")
+        # CRITICAL: Use 'or' instead of get() default to catch null values passed from client
+        session_id = data.get("session_id") or ""
         content = data.get("content", "") or ""
+        
+        if not session_id:
+            logger.warning(f"Validation Error for {sid}: session_id is missing or null.")
+            await sio.emit('error', {'detail': "Session synchronization error. Please refresh."}, room=sid)
+            return
+            
     except Exception as e:
         logger.warning(f"Validation Error for {sid}: {str(e)}")
         await sio.emit('error', {'detail': f"Invalid request: {str(e)}"}, room=sid)
