@@ -1,6 +1,9 @@
 import socketio
 import asyncio
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from app.schemas.api_response import APIResponse, ErrorResponse
 from contextlib import asynccontextmanager
 from psycopg_pool import AsyncConnectionPool
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -15,6 +18,7 @@ langchain.debug = settings.DEBUG_LANGCHAIN
 logger = setup_logger("smartbot", level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO))
 
 from app.utils import db
+from app.schemas.api_response import APIResponse
 
 # Global Pool Initialization (Critical for preventing Postgres crash)
 @asynccontextmanager
@@ -76,9 +80,50 @@ fastapi_app.add_middleware(
 )
 
 # 2. Add API Routes
-@fastapi_app.get("/health")
+@fastapi_app.get("/health", response_model=APIResponse[dict])
 async def health_check():
-    return {"status": "ok", "version": "1.0.0"}
+    return {
+        "code": 200,
+        "status": "success",
+        "message": "Smart-Bot API refershly serving.",
+        "data": {"status": "ok", "version": "1.0.0"}
+    }
+
+# 4. Global Exception Handlers
+@fastapi_app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=ErrorResponse(
+            code=exc.status_code,
+            status="error",
+            message=exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+        ).model_dump()
+    )
+
+@fastapi_app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content=ErrorResponse(
+            code=422,
+            status="error",
+            message="Validation error",
+            errors=exc.errors()
+        ).model_dump()
+    )
+
+@fastapi_app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled Exception: {str(exc)}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content=ErrorResponse(
+            code=500,
+            status="error",
+            message="Đã có lỗi hệ thống xảy ra. Vui lòng thử lại sau."
+        ).model_dump()
+    )
 
 from app.api.auth_routes import router as auth_router
 from app.api.chat_routes import router as chat_router

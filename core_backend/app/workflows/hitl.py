@@ -61,4 +61,9 @@ async def approve_action_webhook(request_id: str):
     logger.info(f"Received HITL Approval for Request ID: {request_id}")
     
     # Return JSON so Telegram or Frontend knows it succeeded
-    return {"status": "approved", "request_id": request_id, "message": "Thread graph resumed"}
+    return {
+        "code": 200,
+        "status": "approved", 
+        "request_id": request_id, 
+        "message": "Thread graph resumed"
+    }

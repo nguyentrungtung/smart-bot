@@ -38,8 +38,8 @@ class SocketService {
             });
 
             if (response.status === 200) {
-                const data = await response.json();
-                this.setTokens(data.access_token);
+                const result = await response.json();
+                this.setTokens(result.data.access_token);
                 console.log("Access token refreshed successfully");
                 return true;
             } else if (response.status === 401 || response.status === 403) {

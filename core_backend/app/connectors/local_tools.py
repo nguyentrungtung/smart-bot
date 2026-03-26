@@ -14,7 +14,7 @@ async def update_user_profile(user_id: str, args: Dict[str, Any]) -> Dict[str, A
     No MCP required for this.
     """
     if not user_id:
-        return {"status": "error", "message": "No user_id found in state"}
+        return {"code": 401, "status": "error", "message": "No user_id found in state"}
 
     try:
         ltm = LongTermMemory(db.pool)
@@ -41,10 +41,10 @@ async def update_user_profile(user_id: str, args: Dict[str, Any]) -> Dict[str, A
         
         logger.info(f"✨ LTM Update for {user_id}: { ' | '.join(learned_summary) if learned_summary else 'No changes' }")
         
-        return {"status": "success", "message": "Thông tin của bạn đã được ghi nhớ để hỗ trợ tốt hơn lần sau."}
+        return {"code": 200, "status": "success", "message": "Thông tin của bạn đã được ghi nhớ để hỗ trợ tốt hơn lần sau."}
     except Exception as e:
         logger.error(f"Local Tool Failure: update_user_profile for {user_id}: {str(e)}")
-        return {"status": "error", "message": str(e)}
+        return {"code": 500, "status": "error", "message": str(e)}
 
 async def get_current_time(timezone: str = "Asia/Ho_Chi_Minh") -> Dict[str, Any]:
     """
@@ -53,6 +53,7 @@ async def get_current_time(timezone: str = "Asia/Ho_Chi_Minh") -> Dict[str, Any]
     # Simple logic for common timezones, fallback to UTC
     now = datetime.datetime.now()
     return {
+        "code": 200,
         "status": "success",
         "current_time": now.strftime("%Y-%m-%d %H:%M:%S"),
         "timezone": timezone
@@ -67,22 +68,23 @@ async def read_local_file(file_path: str) -> Dict[str, Any]:
     try:
         abs_path = os.path.abspath(file_path)
         if not os.path.exists(abs_path):
-            return {"status": "error", "message": f"File not found: {file_path}"}
+            return {"code": 404, "status": "error", "message": f"File not found: {file_path}"}
         
         if os.path.isdir(abs_path):
-            return {"status": "error", "message": f"Path is a directory, not a file."}
+            return {"code": 400, "status": "error", "message": f"Path is a directory, not a file."}
 
         with open(abs_path, 'r', encoding='utf-8') as f:
             content = f.read()
             
         return {
+            "code": 200,
             "status": "success", 
             "content": content,
             "file": os.path.basename(abs_path)
         }
     except Exception as e:
         logger.error(f"File Read Error: {str(e)}")
-        return {"status": "error", "message": str(e)}
+        return {"code": 500, "status": "error", "message": str(e)}
 
 async def write_local_file(file_path: str, content: str) -> Dict[str, Any]:
     """
@@ -95,10 +97,10 @@ async def write_local_file(file_path: str, content: str) -> Dict[str, Any]:
         with open(abs_path, 'w', encoding='utf-8') as f:
             f.write(content)
             
-        return {"status": "success", "message": f"Successfully wrote to {file_path}"}
+        return {"code": 200, "status": "success", "message": f"Successfully wrote to {file_path}"}
     except Exception as e:
         logger.error(f"File Write Error: {str(e)}")
-        return {"status": "error", "message": str(e)}
+        return {"code": 500, "status": "error", "message": str(e)}
 
 async def list_local_directory(directory_path: str = ".") -> Dict[str, Any]:
     """
@@ -107,14 +109,15 @@ async def list_local_directory(directory_path: str = ".") -> Dict[str, Any]:
     try:
         abs_path = os.path.abspath(directory_path)
         if not os.path.exists(abs_path):
-            return {"status": "error", "message": "Directory not found"}
+            return {"code": 404, "status": "error", "message": "Directory not found"}
             
         items = os.listdir(abs_path)
         return {
+            "code": 200,
             "status": "success",
             "directory": directory_path,
             "items": items
         }
     except Exception as e:
         logger.error(f"Directory List Error: {str(e)}")
-        return {"status": "error", "message": str(e)}
+        return {"code": 500, "status": "error", "message": str(e)}

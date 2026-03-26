@@ -65,9 +65,9 @@ export function App() {
             body: JSON.stringify({ user_id: "guest-" + Math.random().toString(36).substring(7) })
           });
           if (response.ok) {
-            const data = await response.json();
+            const result = await response.json();
             console.log("Acquired Guest Token for development");
-            socketService.setTokens(data.access_token, data.refresh_token);
+            socketService.setTokens(result.data.access_token, result.data.refresh_token);
             socketService.connect();
             isConnected = true;
           } else if (response.status === 401 || response.status === 403) {
@@ -91,10 +91,10 @@ export function App() {
             }
           });
           if (sessionResp.ok) {
-            const sData = await sessionResp.json();
-            setSessionId(sData.session_id);
-            localStorage.setItem("smart_bot_session_id", sData.session_id);
-            console.log("Strict Session acquired:", sData.session_id);
+            const sResult = await sessionResp.json();
+            setSessionId(sResult.data.session_id);
+            localStorage.setItem("smart_bot_session_id", sResult.data.session_id);
+            console.log("Strict Session acquired:", sResult.data.session_id);
           }
         }
       } catch (err) {
@@ -152,6 +152,15 @@ export function App() {
     socketService.on("multimodal_config", (config) => {
       console.log("FE Debug: Received multimodal_config:", config);
       setCapabilities(config);
+    });
+
+    socketService.on("error", (data) => {
+      console.error("FE Debug: Received error event from backend:", data);
+      setMessages((prev) => [...prev, {
+        sender: 'bot',
+        text: `⚠️ Ops! ${data.message || "Đã có lỗi xảy ra."} (Mã code: ${data.code || "unknown"})`
+      }]);
+      setLoading(false);
     });
 
     // Handle incoming audio for TTS
@@ -222,11 +231,11 @@ export function App() {
           }
         });
         if (sessionResp.ok) {
-          const sData = await sessionResp.json();
-          setSessionId(sData.session_id);
-          localStorage.setItem("smart_bot_session_id", sData.session_id);
-          payload.session_id = sData.session_id; // Update payload with new ID
-          console.log("FE Debug: Emergency session acquired:", sData.session_id);
+          const sResult = await sessionResp.json();
+          setSessionId(sResult.data.session_id);
+          localStorage.setItem("smart_bot_session_id", sResult.data.session_id);
+          payload.session_id = sResult.data.session_id; // Update payload with new ID
+          console.log("FE Debug: Emergency session acquired:", sResult.data.session_id);
         } else {
           setMessages((prev) => [...prev, {
             sender: 'bot',
@@ -277,12 +286,13 @@ export function App() {
         body: JSON.stringify({ old_session_id: session_id })
       });
       if (response.ok) {
-        const data = await response.json();
-        console.log("Session reset success:", data.session_id);
+        const result = await response.json();
+        const newSessionId = result.data.session_id;
+        console.log("Session reset success:", newSessionId);
 
         // 1. Update State & Storage
-        setSessionId(data.session_id);
-        localStorage.setItem("smart_bot_session_id", data.session_id);
+        setSessionId(newSessionId);
+        localStorage.setItem("smart_bot_session_id", newSessionId);
 
         // 2. Clear Messages UI
         setMessages([{

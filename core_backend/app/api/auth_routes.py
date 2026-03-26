@@ -5,7 +5,11 @@ from app.utils import db
 from sqlalchemy import text
 from pydantic import BaseModel, Field
 import jwt
+import logging
 from typing import Dict, Any
+from app.schemas.api_response import APIResponse
+
+logger = logging.getLogger("auth_routes")
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -25,7 +29,7 @@ class TokenResponse(BaseModel):
     token_type: str = Field(default="bearer", description="Token type")
 
 class MessageResponse(BaseModel):
-    detail: str = Field(..., description="Status message")
+    message: str = Field(..., description="Status message")
 
 class UserMeResponse(BaseModel):
     user_id: str = Field(..., description="The unique identifier of the user")
@@ -39,7 +43,7 @@ class ExchangeTokenResponse(BaseModel):
     access_token: str = Field(..., description="JWT access token for the visitor")
     visitor_id: str = Field(..., description="The ID assigned to the visitor")
 
-@router.post("/exchange-token", response_model=ExchangeTokenResponse)
+@router.post("/exchange-token", response_model=APIResponse[ExchangeTokenResponse])
 async def exchange_token(
     req: ExchangeTokenRequest = Body(...),
     partner_id: str = Depends(oauth2_scheme)
@@ -71,14 +75,19 @@ async def exchange_token(
         })
         
         return {
-            "access_token": visitor_token,
-            "visitor_id": scoped_visitor_id
+            "code": 200,
+            "status": "success",
+            "message": "Token exchange successful.",
+            "data": {
+                "access_token": visitor_token,
+                "visitor_id": scoped_visitor_id
+            }
         }
     except Exception as e:
         logger.error(f"Token exchange failed: {str(e)}")
         raise HTTPException(status_code=401, detail="Invalid partner credentials or token")
 
-@router.post("/login", response_model=TokenResponse, status_code=status.HTTP_200_OK)
+@router.post("/login", response_model=APIResponse[TokenResponse], status_code=status.HTTP_200_OK)
 async def login(req: LoginRequest = Body(...)):
     """
     Standard REST Login.
@@ -123,12 +132,17 @@ async def login(req: LoginRequest = Body(...)):
     refresh_token = create_refresh_token({"sub": user_id})
     
     return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer"
+        "code": 200,
+        "status": "success",
+        "message": "Login successful.",
+        "data": {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer"
+        }
     }
 
-@router.post("/refresh", response_model=TokenResponse)
+@router.post("/refresh", response_model=APIResponse[TokenResponse])
 async def refresh(req: RefreshRequest = Body(...)):
     """
     Standard REST Token Refresh.
@@ -149,9 +163,14 @@ async def refresh(req: RefreshRequest = Body(...)):
         new_access_token = create_access_token({"sub": user_id})
         
         return {
-            "access_token": new_access_token,
-            "refresh_token": req.refresh_token, # Reuse the same refresh token
-            "token_type": "bearer"
+            "code": 200,
+            "status": "success",
+            "message": "Token refreshed successfully.",
+            "data": {
+                "access_token": new_access_token,
+                "refresh_token": req.refresh_token,
+                "token_type": "bearer"
+            }
         }
     except jwt.ExpiredSignatureError:
         raise HTTPException(
@@ -164,7 +183,7 @@ async def refresh(req: RefreshRequest = Body(...)):
             detail="Invalid refresh token"
         )
 
-@router.post("/logout", response_model=MessageResponse)
+@router.post("/logout", response_model=APIResponse[None])
 async def logout(token: str = Depends(oauth2_scheme)):
     """
     Standard REST Logout.
@@ -182,9 +201,13 @@ async def logout(token: str = Depends(oauth2_scheme)):
     # Add token to Redis Blacklist
     await blacklist_token(token)
     
-    return {"detail": "Successfully logged out. Token has been invalidated."}
+    return {
+        "code": 200,
+        "status": "success",
+        "message": "Successfully logged out. Token has been invalidated."
+    }
 
-@router.get("/me", response_model=UserMeResponse)
+@router.get("/me", response_model=APIResponse[UserMeResponse])
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     """
     Standard REST GET /me.
@@ -200,8 +223,13 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
         payload = await verify_jwt_token(token)
         return {
-            "user_id": payload.get("sub"),
-            "type": payload.get("type")
+            "code": 200,
+            "status": "success",
+            "message": "User context retrieved.",
+            "data": {
+                "user_id": payload.get("sub"),
+                "type": payload.get("type")
+            }
         }
     except jwt.ExpiredSignatureError:
         raise HTTPException(

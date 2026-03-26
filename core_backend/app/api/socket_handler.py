@@ -81,12 +81,20 @@ async def handle_message(sid, data):
         
         if not session_id:
             logger.warning(f"Validation Error for {sid}: session_id is missing or null.")
-            await sio.emit('error', {'detail': "Session synchronization error. Please refresh."}, room=sid)
+            await sio.emit('error', {
+                'code': 400,
+                'status': 'error',
+                'message': "Session synchronization error. Please refresh."
+            }, room=sid)
             return
             
     except Exception as e:
         logger.warning(f"Validation Error for {sid}: {str(e)}")
-        await sio.emit('error', {'detail': f"Invalid request: {str(e)}"}, room=sid)
+        await sio.emit('error', {
+            'code': 400,
+            'status': 'error',
+            'message': f"Invalid request: {str(e)}"
+        }, room=sid)
         return
 
     # 1. Raw Payload Logging (Pre-processing)
@@ -98,7 +106,11 @@ async def handle_message(sid, data):
 
     async with session_lock(client, session_id, timeout=30) as acquired:
         if not acquired:
-            await sio.emit('error', {'detail': 'System is processing previous query...'}, room=sid)
+            await sio.emit('error', {
+                'code': 429,
+                'status': 'error',
+                'message': 'System is processing previous query. Please wait.'
+            }, room=sid)
             return
 
         # 2. Sanitize text input (PII Scrubbing)
@@ -218,7 +230,11 @@ async def handle_message(sid, data):
             
         except Exception as e:
             logger.error(f"[{interaction_id}] Graph execution error: {str(e)}")
-            await sio.emit('error', {'detail': 'An error occurred during generation.'}, room=sid)
+            await sio.emit('error', {
+                'code': 500,
+                'status': 'error',
+                'message': 'An error occurred during generation.'
+            }, room=sid)
         finally:
             # Clear tracing context
             session_id_context.reset(sid_token)

@@ -4,6 +4,7 @@ from app.middleware.auth import verify_jwt_token
 from app.memory.chat_history import ChatHistoryTracker
 from app.utils.db import get_pool
 from pydantic import BaseModel, Field
+from app.schemas.api_response import APIResponse
 import uuid
 import jwt
 import logging
@@ -20,7 +21,6 @@ class NewSessionResponse(BaseModel):
     user_id: str = Field(..., description="The user linked to this session")
 
 class CleanupResponse(BaseModel):
-    status: str
     details: dict
 
 async def get_current_user_id(token: str = Depends(oauth2_scheme)) -> str:
@@ -32,7 +32,7 @@ async def get_current_user_id(token: str = Depends(oauth2_scheme)) -> str:
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-@router.post("/new-session", response_model=NewSessionResponse)
+@router.post("/new-session", response_model=APIResponse[NewSessionResponse], status_code=status.HTTP_201_CREATED)
 async def create_new_session(
     background_tasks: BackgroundTasks,
     payload: NewSessionRequest | None = None,
@@ -58,11 +58,16 @@ async def create_new_session(
     logger.info(f"New session created: {session_id} for user {user_id}")
     
     return {
-        "session_id": session_id,
-        "user_id": user_id
+        "code": 201,
+        "status": "success",
+        "message": "New session created successfully.",
+        "data": {
+            "session_id": session_id,
+            "user_id": user_id
+        }
     }
 
-@router.delete("/history", response_model=CleanupResponse)
+@router.delete("/history", response_model=APIResponse[CleanupResponse], status_code=status.HTTP_200_OK)
 async def cleanup_history(days: int = 7, user_id: str = Depends(get_current_user_id)):
     """
     Cleanup Job: Deletes chat history and checkpoints older than X days.
@@ -73,8 +78,12 @@ async def cleanup_history(days: int = 7, user_id: str = Depends(get_current_user
     try:
         results = await tracker.cleanup_history(days=days)
         return {
+            "code": 200,
             "status": "success",
-            "details": results
+            "message": "Maintenance cleanup completed.",
+            "data": {
+                "details": results
+            }
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Cleanup failed: {str(e)}")
