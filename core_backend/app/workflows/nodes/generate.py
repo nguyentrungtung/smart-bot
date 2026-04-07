@@ -38,7 +38,7 @@ async def generate_response(
     sio = config.get("configurable", {}).get("sio") if config else None
     sid = config.get("configurable", {}).get("sid") if config else None
 
-    print(f"--- [GENERATE NODE] --- sid={sid}, presence of sio={'YES' if sio else 'NO'}")
+    logger.debug(f"Generate node: sid={sid}, sio={'present' if sio else 'absent'}")
 
     messages = state.get("messages", [])
     metadata = state.get("metadata", {})
@@ -50,8 +50,9 @@ async def generate_response(
         fallback = should_bypass(messages, metadata, rag_docs)
         if fallback is not None:
             if sio and sid:
+                # Only stream content — socket_handler emits message_complete after the agent node.
+                # Emitting message_complete here would cause double-emit and bleed into next turn.
                 await sio.emit("message_stream", {"chunk": fallback.content}, room=sid)
-                await sio.emit("message_complete", {"session_id": state.get("session_id")}, room=sid)
             return {"messages": [fallback]}
     else:
         logger.info("Guard: GUARDS_ENABLED=False. Skipping bypass check.")
@@ -71,27 +72,31 @@ async def generate_response(
     # ── 3. Convert messages & Token Trimming ──────────────────
     litellm_messages = langchain_to_litellm(messages, system_content)
     
-    # Token Trimming logic (Layer 4)
+    # Token Trimming logic (Layer 4) — O(n) single pass
     from app.utils.tokens import estimate_tokens
-    
+
     initial_tokens = estimate_tokens(messages)
     logger.info(f"TRIMMER: Initial token estimate: {initial_tokens}")
 
-    # Always keep high-level messages, preserve system prompt
-    removed_count = 0
-    while estimate_tokens(messages) > settings.MAX_HISTORY_TOKENS and len(messages) > 2:
-        # Note: Trimming 'messages' (LangChain) because litellm_messages is a derived view
-        # In a real scenario, we'd need to update 'state' or at least the local 'messages'
-        # For now, let's stick to the existing trimming logic pattern but with optimized counts
-        messages.pop(1)
-        removed_count += 1
-        # Re-convert to keep litellm_messages in sync if needed, 
-        # but let's just optimize the existing loop for now.
-    
-    # Re-build litellm_messages after trimming
-    if removed_count > 0:
-        litellm_messages = langchain_to_litellm(messages, system_content)
-        logger.info(f"TRIMMER: Removed {removed_count} old messages. New estimate: {estimate_tokens(messages)}")
+    if initial_tokens > settings.MAX_HISTORY_TOKENS and len(messages) > 2:
+        # Walk from the oldest non-first message forward, accumulating token savings
+        # until we drop below the limit. Always keep messages[0] (first turn context).
+        running_total = initial_tokens
+        keep_from = 1  # index of first message we will keep after messages[0]
+        for i in range(1, len(messages) - 1):  # never drop the last message
+            if running_total <= settings.MAX_HISTORY_TOKENS:
+                break
+            running_total -= estimate_tokens([messages[i]])
+            keep_from = i + 1
+
+        removed_count = keep_from - 1
+        if removed_count > 0:
+            messages = [messages[0]] + messages[keep_from:]
+            litellm_messages = langchain_to_litellm(messages, system_content)
+            logger.info(
+                f"TRIMMER: Removed {removed_count} old messages. "
+                f"New estimate: {estimate_tokens(messages)}"
+            )
 
     # ── [TOKEN USAGE DEBUG] ──
     current_tokens = estimate_tokens(messages)
@@ -105,8 +110,24 @@ async def generate_response(
     """)
 
     has_multimodal = has_multimodal_user_message(litellm_messages)
-    use_tools = TOOLS 
     should_stream = True
+
+    # Skip tool injection for short social/greeting messages to save tokens
+    # and prevent smaller local models from spurious tool calls.
+    from app.workflows.nodes.tool_defs import BYPASS_KEYWORDS
+    last_user_text = ""
+    for m in reversed(litellm_messages):
+        if m.get("role") == "user":
+            c = m.get("content", "")
+            last_user_text = c if isinstance(c, str) else next(
+                (b.get("text", "") for b in c if isinstance(b, dict) and b.get("type") == "text"), ""
+            )
+            break
+    _is_social = (
+        len(last_user_text.split()) <= 5
+        and any(kw in last_user_text.lower() for kw in BYPASS_KEYWORDS)
+    )
+    use_tools = None if _is_social else TOOLS
     current_model = settings.LLM_MODEL
 
     logger.info(
@@ -114,13 +135,27 @@ async def generate_response(
         f"stream={should_stream}, tools={'yes' if use_tools else 'no'}"
     )
 
+    # Log FULL message content for debugging voice/audio
+    logger.info(f"FULL_MESSAGES_TO_LLM: {len(litellm_messages)} messages total")
+    for i, m in enumerate(litellm_messages):
+        role = m['role'].upper()
+        content = m['content']
+        if isinstance(content, str):
+            logger.info(f"  [{i}] {role}: {content[:500]}")  # Log first 500 chars
+        elif isinstance(content, list):
+            logger.info(f"  [{i}] {role} (multimodal list with {len(content)} blocks):")
+            for j, block in enumerate(content):
+                if isinstance(block, dict):
+                    block_type = block.get("type", "unknown")
+                    if block_type == "text":
+                        logger.info(f"      [block {j}] TEXT: {block.get('text', '')[:300]}")
+                    else:
+                        logger.info(f"      [block {j}] {block_type.upper()}: {str(block)[:100]}")
+
     if settings.LOG_LEVEL.upper() == "DEBUG":
-        print("\n--- [LLM PROMPT DEBUG] ---")
-        print(f"SYSTEM PROMPT:\n{system_content}")
-        print("\nMESSAGE HISTORY SENT TO LLM:")
+        logger.debug(f"SYSTEM PROMPT:\n{system_content}")
         for i, m in enumerate(litellm_messages):
-            print(f"  [{i}] {m['role'].upper()}: {str(m['content'])[:200]}...")
-        print("---------------------------\n")
+            logger.debug(f"  [{i}] {m['role'].upper()}: {str(m['content'])[:200]}...")
 
     # ── 4. Call LiteLLM (via proxy — proxy speaks OpenAI protocol) ─
     try:
@@ -163,8 +198,8 @@ async def generate_response(
         logger.error(f"LiteLLM Error caught in node: {e}")
         error_msg = _build_error_message(has_multimodal)
         if sio and sid:
+            # Only stream content — socket_handler emits message_complete after the agent node.
             await sio.emit("message_stream", {"chunk": error_msg.content}, room=sid)
-            await sio.emit("message_complete", {"session_id": state.get("session_id")}, room=sid)
         return {"messages": [error_msg]}
 
 

@@ -53,10 +53,9 @@ def should_bypass(
     last_text = extract_text_from_content(last_content)
 
     # Multimodal -> always forward to LLM (Gemini Vision/Audio)
-    # Check entire history to maintain context awareness
-    any_media = any(detect_multimodal(m.content) for m in messages)
-    if any_media:
-        logger.info(f"Guard: Multimodal content detected in history ({len(messages)} messages) — bypass SKIPPED.")
+    # Only check the CURRENT message — history images should not permanently disable the guard.
+    if detect_multimodal(last_content):
+        logger.info("Guard: Multimodal content in current message — bypass SKIPPED.")
         return None
 
     # CRITICAL: If the last message is a Tool result, we MUST let the LLM generate the final answer.
@@ -70,12 +69,23 @@ def should_bypass(
         return None
 
     # If RAG failed (explicitly marked by RAG node) and not whitelisted → block
+    # Exception: if the user has a non-empty profile, allow through — the AI can
+    # answer questions about user's own context (name, location, preferences) from
+    # the injected profile even without matching RAG documents.
     rag_failed = metadata.get("rag_failed", False)
-    if rag_failed and not is_whitelisted:
+    profile = metadata.get("profile", {})
+    has_profile_context = bool(
+        profile.get("name") or profile.get("facts") or profile.get("preferences")
+    )
+    if rag_failed and not is_whitelisted and not has_profile_context:
         logger.warning(f"Guard: Bypass triggered for: {last_text[:30]}...")
+        logger.debug(f"Guard: FULL MESSAGE TEXT (truncated): {last_text[:500]}")  # Log more detail
         return AIMessage(
             content="Xin lỗi, tôi chưa rõ tài liệu này. "
                     "Vui lòng để lại SĐT / Email để nhân viên CSKH hỗ trợ bạn."
         )
+    if rag_failed and not is_whitelisted and has_profile_context:
+        logger.info(f"Guard: RAG failed but user has profile context — allowing through for profile-aware response.")
+        logger.debug(f"Guard: FULL MESSAGE TO LLM: {last_text[:500]}")
 
     return None
