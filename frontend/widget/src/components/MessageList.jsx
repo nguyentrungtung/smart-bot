@@ -99,7 +99,21 @@ export function MessageList({ messages, partialResponse, onRate }) {
                                 )}
                             </div>
                         ) : (
-                            msg.text
+                            <div className="user-message-content">
+                                <div>
+                                    {msg.text}
+                                </div>
+                                {msg.localAudioUrl && (
+                                    <div style={{ marginTop: '6px' }}>
+                                        <audio 
+                                            src={msg.localAudioUrl} 
+                                            controls 
+                                            controlsList="nodownload noplaybackrate" 
+                                            style={{ height: '36px', maxWidth: '240px', borderRadius: '4px' }} 
+                                        />
+                                    </div>
+                                )}
+                            </div>
                         )}
                     </div>
                 </div>

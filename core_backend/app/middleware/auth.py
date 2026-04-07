@@ -87,6 +87,8 @@ async def blacklist_token(token: str):
 async def is_token_blacklisted(token: str) -> bool:
     """
     Checks if a token exists in the Redis blacklist.
+    Fails CLOSED: if Redis is unavailable, all tokens are treated as blacklisted
+    to prevent logout-bypass when the cache layer is down.
     """
     try:
         from app.utils.redis import get_redis
@@ -94,8 +96,8 @@ async def is_token_blacklisted(token: str) -> bool:
         exists = await redis_client.exists(f"blacklist:{token}")
         return exists > 0
     except Exception as e:
-        logger.error(f"Redis blacklist check error: {str(e)}")
-        return False
+        logger.error(f"Redis blacklist check error — failing closed (deny all): {str(e)}")
+        return True  # fail-closed: deny access when we cannot verify
 
 async def verify_jwt_token(token: str) -> dict:
     """

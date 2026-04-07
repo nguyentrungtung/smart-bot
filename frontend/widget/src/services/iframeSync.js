@@ -7,6 +7,7 @@ class IframeSyncService {
             "http://localhost:3000",
             "http://127.0.0.1:3000",
             "http://localhost:5173",
+            "http://localhost:5174",
             "http://localhost:8080"
         ];
     }
@@ -64,7 +65,8 @@ class IframeSyncService {
             }
 
             if (event.data && event.data.type === "SMART_BOT_AUTH") {
-                onEvent("auth", event.data.token);
+                const token = event.data.token || event.data.payload;
+                if (token) onEvent("auth", token);
             }
         });
     }

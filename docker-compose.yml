@@ -1,4 +1,7 @@
 services:
+  # ---------------------------------------------------------------------------
+  # Main PostgreSQL (pgvector) — used by core_backend / LangGraph only
+  # ---------------------------------------------------------------------------
   postgres:
     image: pgvector/pgvector:pg16
     ports:
@@ -12,6 +15,27 @@ services:
     profiles: [ "infra", "backend" ]
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-smartsales}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Dedicated PostgreSQL for LiteLLM proxy (port 5433 on host)
+  # Keeps LiteLLM schema completely isolated from the app database.
+  # ---------------------------------------------------------------------------
+  postgres_litellm:
+    image: postgres:16-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: ${LITELLM_DB_USER:-litellm}
+      POSTGRES_PASSWORD: ${LITELLM_DB_PASSWORD:-litellm}
+      POSTGRES_DB: ${LITELLM_DB_NAME:-litellm}
+    volumes:
+      - pgdata_litellm:/var/lib/postgresql/data
+    profiles: [ "infra", "backend" ]
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${LITELLM_DB_USER:-litellm} -d ${LITELLM_DB_NAME:-litellm}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -42,12 +66,15 @@ services:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-litellm-proxy}
       - STORE_MODEL_IN_DB=False
       - LOCAL_MODEL_API_BASE=${LOCAL_MODEL_API_BASE:-http://host.docker.internal:1234/v1}
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin}@postgres:5432/${POSTGRES_DB:-smartsales}
+      # Points to the dedicated LiteLLM postgres, NOT the app postgres
+      - DATABASE_URL=postgresql://${LITELLM_DB_USER:-litellm}:${LITELLM_DB_PASSWORD:-litellm}@postgres_litellm:5432/${LITELLM_DB_NAME:-litellm}
       - REDIS_PASSWORD=${REDIS_PASSWORD}
     command: [ "--config", "/app/config.yaml" ]
     depends_on:
-      - redis
-      - postgres
+      postgres_litellm:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     profiles: [ "infra", "backend" ]
 
   core_backend:
@@ -68,9 +95,12 @@ services:
       - MULTIMODAL_ENABLED=${MULTIMODAL_ENABLED:-False}
       - PYTHONUNBUFFERED=1
     depends_on:
-      - postgres
-      - redis
-      - litellm_proxy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      litellm_proxy:
+        condition: service_started
     volumes:
       - ./core_backend:/app
       - ./.keys:/app/.keys:ro
@@ -88,3 +118,4 @@ services:
 
 volumes:
   pgdata:
+  pgdata_litellm:

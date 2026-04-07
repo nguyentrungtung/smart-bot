@@ -51,7 +51,9 @@ def estimate_tokens(messages_or_text) -> int:
         total += chunk_count
         # logger.debug(f"TOKEN_DEBUG: Msg {i} ({type(m).__name__}) = {chunk_count} tokens")
     
-    if total > 5000:
-        logger.warning(f"TOKEN_ALERT: Total tokens estimated at {total}! Threshold is usually 1500.")
+    from app.config.settings import settings
+    alert_threshold = settings.SUMMARY_THRESHOLD
+    if total > alert_threshold:
+        logger.warning(f"TOKEN_ALERT: Total tokens estimated at {total} (threshold={alert_threshold}).")
         
     return total

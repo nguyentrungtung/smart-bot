@@ -2,7 +2,6 @@ import logging
 from typing import Dict, Any, List
 from app.workflows.state import GraphState
 from app.config.settings import settings
-from langchain_core.messages import SystemMessage
 
 logger = logging.getLogger("rag_node")
 
@@ -22,14 +21,23 @@ async def rag_search(state: GraphState) -> Dict[str, Any]:
     if isinstance(query_text, list):
         query_text = next((item["text"] for item in query_text if item["type"] == "text"), "")
 
-    # Context enrichment: If the query is short, prefix it with the previous AI/User context 
+    # Context enrichment: If the query is short, prefix it with the previous AI/User context
     # to maintain semantic relevance (handling "Nó", "Cái đó", "Vừa rồi")
     search_query = query_text
-    if len(messages) >= 3 and len(query_text) < 30:
-        prev_user_msg = messages[-3].content
-        if isinstance(prev_user_msg, str):
-            search_query = f"{prev_user_msg} {query_text}"
-            logger.info(f"RAG: Context enrichment used: {search_query}")
+    if len(query_text) < 30 and len(messages) >= 2:
+        # Build a context window from the last 2 turns (human + AI) before this message
+        context_parts = []
+        for m in messages[-3:-1]:  # up to 2 messages before current
+            c = m.content
+            if isinstance(c, str) and c.strip():
+                context_parts.append(c.strip())
+            elif isinstance(c, list):
+                txt = " ".join(b.get("text", "") for b in c if isinstance(b, dict) and b.get("type") == "text")
+                if txt.strip():
+                    context_parts.append(txt.strip())
+        if context_parts:
+            search_query = " ".join(context_parts) + " " + query_text
+            logger.info(f"RAG: Context enrichment used: {search_query[:80]}")
 
     from app.workflows.nodes.tool_defs import BYPASS_KEYWORDS
     is_whitelisted = any(kw in search_query.lower() for kw in BYPASS_KEYWORDS)
@@ -50,39 +58,45 @@ async def rag_search(state: GraphState) -> Dict[str, Any]:
     # 3. REAL Embedding: Call LiteLLM embedding endpoint
     try:
         import litellm
-        litellm.drop_params = True # Standardize parameter handling for mixed local/cloud environments
+        litellm.drop_params = True  # Drop unsupported params (e.g. dimensions on local models)
         emb_resp = await litellm.aembedding(
-            model="lm-studio-embedding", # As defined in litellm_config.yaml
+            model=settings.EMBEDDING_MODEL,  # Configured in .env → litellm_config.yaml
             input=[search_query],
             api_base=settings.LITELLM_API_BASE,
             api_key=settings.LITELLM_API_KEY,
-            custom_llm_provider="openai", 
-            dimensions=settings.EMBEDDING_DIM # Added for cloud model compatibility
+            custom_llm_provider="openai",
+            # NOTE: `dimensions` is intentionally omitted — local models (LM Studio) don't
+            # support it and raise UnsupportedParamsError. drop_params=True handles cloud models.
         )
         embedding = emb_resp.data[0]["embedding"]
     except Exception as emb_err:
-        logger.error(f"RAG: Embedding generation failed: {emb_err}")
-        # Fallback to dummy but mark it as safe failure
-        embedding = [0.1] * settings.EMBEDDING_DIM 
+        logger.error(f"RAG: Embedding generation failed — skipping search: {emb_err}")
+        return {"rag_documents": [], "metadata": {"rag_failed": True, "rag_error": str(emb_err)}}
 
     try:
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
-                # REQUIRED BOILERPLATE: SQL Query for pgvector with Cosine Operator
+                # CTE computes distance once per row — avoids serializing the
+                # 768-dim vector 3 times as separate query parameters.
                 query = """
-                SELECT content, 1 - (embedding <=> %s::vector) AS similarity_score
-                FROM documents
-                WHERE 1 - (embedding <=> %s::vector) >= 0.7
-                ORDER BY embedding <=> %s::vector
+                WITH scored AS (
+                    SELECT content,
+                           1 - (embedding <=> %s::vector) AS similarity_score
+                    FROM documents
+                )
+                SELECT content, similarity_score
+                FROM scored
+                WHERE similarity_score >= 0.7
+                ORDER BY similarity_score DESC
                 LIMIT 5;
                 """
-                await cur.execute(query, (embedding, embedding, embedding))
+                await cur.execute(query, (embedding,))
                 results = await cur.fetchall()
 
         # 4. Format results for the Agent
         docs = [row[0] for row in results]
-            
-        print(f"DEBUG RAG: Row count {len(results)}, Docs: {docs}")
+
+        logger.debug(f"DEBUG RAG: Row count {len(results)}, Docs: {docs}")
         logger.info(f"RAG: Raw results count: {len(results)}")
         
         if not docs:

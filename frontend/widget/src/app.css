@@ -271,6 +271,15 @@
   background: #dbeafe;
 }
 
+/* Spin animation for loading states (e.g. new session button) */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
 /* Typing / Streaming Cursor */
 .message.bot.streaming::after {
   content: '|';

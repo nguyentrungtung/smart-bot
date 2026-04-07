@@ -135,6 +135,22 @@ async def handle_message(sid, data):
         logger.info(
             f"[{pfx}] STEP 4/6 PREPARE ✓ {content_type} content ready, {capabilities}"
         )
+
+        # ── Voice: log full transcription before it enters LangGraph / LLM ──────
+        if has_audio:
+            if isinstance(input_content, list):
+                for block in input_content:
+                    if (
+                        isinstance(block, dict)
+                        and block.get("type") == "text"
+                        and block.get("text", "").startswith("[Giọng nói")
+                    ):
+                        logger.info(
+                            f"[{pfx}] ══ VOICE→LLM INPUT ══ {block['text']}"
+                        )
+                        break
+            elif isinstance(input_content, str) and input_content.startswith("[Giọng nói"):
+                logger.info(f"[{pfx}] ══ VOICE→LLM INPUT ══ {input_content}")
     except Exception as e:
         logger.error(f"[{pfx}] STEP 4/6 PREPARE ✗ {str(e)}")
         await sio.emit(

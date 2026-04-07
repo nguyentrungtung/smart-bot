@@ -9,6 +9,9 @@ BYPASS_KEYWORDS = [
     "ngày", "tháng", "năm", "giờ", "hôm nay", "bây giờ", "la sao", "là sao",
     "tạo xweb", "xweb",
     "xin chào", "xin chao", "hello", "hi", "chào",
+    # Social closings — should never be blocked by the RAG guard
+    "cảm ơn", "cam on", "tạm biệt", "tam biet", "hẹn gặp", "hen gap",
+    "ok", "được rồi", "vâng", "oke", "okay", "thanks", "thank you",
 ]
 
 # Tool Definitions for LiteLLM (OpenAI-compatible format)

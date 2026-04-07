@@ -2,7 +2,7 @@ import re
 
 def scrub_pii(text: str) -> str:
     """
-    Sanitizes user input by masking Phone numbers, Emails, and basic Credit Card patterns
+    Sanitizes user input by masking PII (phone, email, credit card, CCCD/CMND)
     before it is sent to LiteLLM or saved to the Conversation Database.
     """
     if not text:
@@ -12,13 +12,20 @@ def scrub_pii(text: str) -> str:
     email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
     text = re.sub(email_pattern, '[REDACTED_EMAIL]', text)
 
-    # Mask Phone Numbers (Basic VN/International patterns, e.g., 0912345678 or +84912345678)
-    # This regex is a simplified example
-    phone_pattern = r'(?:\+84|0)(?:3[2-9]|5[6|8|9]|7[0|6-9]|8[1-5|8|9]|9[0-4|6-9])[0-9]{7}\b'
+    # Mask Vietnamese phone numbers (fixed: use proper character classes, no | inside [])
+    # Covers: 03x, 05x, 07x, 08x, 09x series — 10 digits total
+    phone_pattern = r'(?:\+84|0)(?:3[2-9]|5[689]|7[06-9]|8[1-589]|9[0-46-9])[0-9]{7}\b'
     text = re.sub(phone_pattern, '[REDACTED_PHONE]', text)
-    
-    # Mask Credit Cards (16 digits separated by spaces or dashes)
-    cc_pattern = r'\b(?:\d[ -]*){13,16}\b'
+
+    # Mask Vietnamese CCCD (12 digits) and old CMND (9 digits)
+    # Require word boundary and disallow adjacent digits to reduce false positives
+    cccd_pattern = r'\b\d{12}\b'
+    cmnd_pattern = r'\b\d{9}\b'
+    text = re.sub(cccd_pattern, '[REDACTED_ID]', text)
+    text = re.sub(cmnd_pattern, '[REDACTED_ID]', text)
+
+    # Mask Credit Cards: 4 groups of 4 digits separated by spaces or dashes (strict format)
+    cc_pattern = r'\b\d{4}[ -]\d{4}[ -]\d{4}[ -]\d{4}\b'
     text = re.sub(cc_pattern, '[REDACTED_CARD]', text)
 
     return text

@@ -23,3 +23,5 @@ class GraphState(TypedDict):
     thinking: List[str]
     # Generic metadata for future extensions
     metadata: Annotated[Dict[str, Any], merge_metadata]
+    # Tool call loop guard: counts consecutive tool invocations per turn
+    tool_call_count: int

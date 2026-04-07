@@ -21,11 +21,26 @@ from app.utils import db
 from app.schemas.api_response import APIResponse
 
 # Global Pool Initialization (Critical for preventing Postgres crash)
+async def _prewarm_whisper():
+    """
+    Load faster-whisper model into memory at startup so the first audio
+    message is not delayed by model loading (which can take 10-30s on CPU).
+    Runs in a thread pool to avoid blocking the event loop.
+    """
+    try:
+        from app.multimodal.audio_pipeline import _get_whisper_model
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, _get_whisper_model)
+        logger.info("✅ faster-whisper model pre-warmed and ready.")
+    except Exception as e:
+        logger.warning(f"⚠️ faster-whisper pre-warm failed (audio STT will load on first use): {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 Starting up Smart-Bot Backend...")
     dsn = settings.DATABASE_URL.replace("+psycopg", "")
-    
+
     try:
         # 1. Initialize Connection Pool
         async with AsyncConnectionPool(dsn, max_size=20) as pool_instance:
@@ -54,7 +69,10 @@ async def lifespan(app: FastAPI):
                 logger.error("❌ All checkpointer setup attempts failed. Falling back to MemorySaver.")
                 from langgraph.checkpoint.memory import MemorySaver
                 db.checkpointer = MemorySaver()
-            
+
+            # 3. Pre-warm faster-whisper so first audio message is instant
+            asyncio.create_task(_prewarm_whisper())
+
             yield
     except Exception as e:
         logger.error(f"❌ Postgres Connection Failed: {e}. Starting in Memory mode.")

@@ -2,6 +2,7 @@ import pytest
 import jwt
 import os
 from datetime import datetime, timedelta
+from unittest.mock import patch, AsyncMock
 from cryptography.hazmat.primitives import serialization
 from app.middleware.auth import verify_jwt_token
 from app.middleware.pii_scrubber import scrub_pii

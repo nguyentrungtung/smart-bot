@@ -8,7 +8,9 @@ Smart-Bot là một giải pháp Chatbot Agentic hiện đại được xây d�
 - **RAG (pgvector)**: Tìm kiếm tri thức thời gian thực từ Database PostgreSQL với độ chính xác cao.
 - **Autonomous Tools**: Tự động gọi các công cụ hỗ trợ (Thời tiết, Tra cứu giờ, Khởi tạo Xweb).
 - **Hallucination Block**: Cơ chế bảo vệ Scenario B - Chỉ trả lời khi có dữ liệu tin cậy, nếu không sẽ chuyển sang thông báo hỗ trợ.
-- **Multimodal**: Hỗ trợ gửi ảnh và giọng nói trực tiếp từ Widget.
+- **Multimodal — Voice & Vision**: 
+  - **Voice Chat**: Server-side STT (faster-whisper) converts audio (webm/ogg/mp4) to Vietnamese text automatically
+  - **Vision**: Image analysis via Gemini 2.5-flash (base64 encoding)
 - **Security**: Xác thực JWT RS256, Scrubbing PII (ẩn thông tin nhạy cảm), và Session Locking bằng Redis.
 
 ---
@@ -25,10 +27,15 @@ Smart-Bot là một giải pháp Chatbot Agentic hiện đại được xây d�
 
 Đây là cách nhanh nhất để chạy toàn bộ hệ thống bao gồm Backend, Database, Redis và LiteLLM Proxy.
 
+> **Kiến trúc Database**: Hệ thống dùng **hai** PostgreSQL độc lập để tránh xung đột schema:
+> - `postgres` (port **5432**) — dành riêng cho `core_backend` / LangGraph / Alembic.
+> - `postgres_litellm` (port **5433**) — dành riêng cho `litellm_proxy`. Tự khởi tạo schema khi startup, không liên quan đến Alembic.
+
 1. **Chuẩn bị môi trường**:
    ```bash
    cp .env.example .env
-   # Cập nhật các API Key cần thiết (OPENAI_API_KEY, LITELLM_API_KEY) trong .env
+   # Cập nhật các API Key cần thiết (OPENAI_API_KEY, GEMINI_API_KEY, ...) trong .env
+   # Các biến LITELLM_DB_* đã có giá trị mặc định, không bắt buộc thay đổi
    ```
 
 2. **Khởi tạo cặp khóa bảo mật (JWT)**:
@@ -51,8 +58,11 @@ Smart-Bot là một giải pháp Chatbot Agentic hiện đại được xây d�
    docker compose --profile backend --profile tools logs -f
    ```
 
-4. **Áp dụng Database Migration**:
-   Sau khi các service khởi động xong, bạn cần khởi tạo các bảng trong PostgreSQL:
+   Thứ tự khởi động được Docker Compose đảm bảo tự động (qua `healthcheck`):
+   `postgres` & `postgres_litellm` → `redis` → `litellm_proxy` → `core_backend`
+
+4. **Áp dụng Database Migration (chỉ cho core_backend)**:
+   Migration Alembic chỉ chạy trên `postgres` (port 5432). `postgres_litellm` được LiteLLM tự quản lý, **không cần** và **không được** chạy Alembic vào đó.
    ```bash
    docker compose exec core_backend alembic upgrade head
    ```
@@ -62,18 +72,83 @@ Smart-Bot là một giải pháp Chatbot Agentic hiện đại được xây d�
    docker compose exec core_backend python scripts/seed_db.py
    ```
 
-5. **Reset & Rebuild từ đầu (Clean Start)**:
-   Nếu bạn muốn xóa toàn bộ dữ liệu (bao gồm Database volumes) và build lại:
+6. **Reset & Rebuild từ đầu (Clean Start)**:
+   Nếu bạn muốn xóa toàn bộ dữ liệu (bao gồm cả hai Database volumes) và build lại:
    ```bash
-   # Dừng và xóa volume
+   # Dừng và xóa toàn bộ volume (pgdata + pgdata_litellm)
    docker compose --profile backend --profile tools down -v
    
    # Build và chạy lại
    docker compose --profile backend --profile tools up -d --build
    
-   # Áp dụng lại migration (bắt buộc sau khi xóa volume)
+   # Áp dụng lại migration cho core_backend (bắt buộc sau khi xóa volume)
    docker compose exec core_backend alembic upgrade head
    ```
+
+---
+
+## 🎤 Voice Chat & Audio Pipeline
+
+Smart-Bot hỗ trợ chat bằng **giọng nói tiếng Việt** với xử lý âm thanh phía máy chủ (Server-Side STT).
+
+### Kiến trúc Audio Pipeline (STT — Community Standard)
+
+```
+Browser mic (webm/ogg/mp4) 
+  → base64 encode 
+  → Socket.IO 
+  → [DECODE] base64 → bytes
+  → [CONVERT] FFmpeg pipe: any format → 16kHz mono PCM s16le
+  → [PARSE] numpy: bytes → float32 array
+  → [TRANSCRIBE] faster-whisper Vietnamese STT
+  → [Giọng nói của người dùng]: {transcription} 
+  → LLM (model-agnostic: LM Studio, Gemini, OpenAI)
+```
+
+**Tại sao STT-First?**
+- **Model-agnostic**: Hoạt động với mọi LLM backend (LM Studio, Gemini, OpenAI)
+- **Auditable**: Transcription có thể ghi log, kiểm tra, và debug
+- **No format lock-in**: Tránh sự không tương thích của `input_audio` giữa OpenAI Realtime, Gemini Live, và local models
+- **Dễ fallback**: Nếu STT thất bại, hệ thống trả lại thông báo thân thiện (ví dụ: "[Không nghe rõ, vui lòng nhắc lại]") thay vì treo ứng dụng
+
+### Kiểm tra Voice Pipeline
+
+**Test E2E 7-Turn Voice Chat** (4 voice turns + 3 text turns, all Vietnamese):
+
+```bash
+docker compose exec core_backend python scripts/test_voice_chat.py
+```
+
+**Kết quả mong đợi**: ✅ 7/7 PASS
+
+Kiểm tra các thành phần:
+- **T1 (VOICE)**: Synthetic audio → AI asks to repeat if STT fails (VAD filter rejects non-speech)
+- **T2 (TEXT)**: AI identity → SmartSales Assistant profile
+- **T3 (VOICE+TEXT)**: Time query with tool call
+- **T4 (VOICE+TEXT)**: Weather query for Hà Nội
+- **T5 (TEXT)**: Profile seeding (name=Minh)
+- **T6 (VOICE+TEXT)**: RAG search about Smart Bot features
+- **T7 (TEXT)**: Memory recall ("Bạn có nhớ tên tôi không?") → AI recalls "Minh"
+
+**Xem logs audio pipeline**:
+
+```bash
+docker compose logs core_backend 2>&1 | grep -E 'AUDIO|DECODE|CONVERT|PARSE|TRANSCRIBE|STT'
+```
+
+### Audio Requirements
+
+- **Browser**: Chrome, Edge, Firefox (WebRTC audio capture)
+- **Server**: FFmpeg binary (via `apt-get install ffmpeg` or similar)
+- **Python**: faster-whisper package (included in `requirements.txt`)
+- **Model**: faster-whisper small model (~500MB, auto-downloaded from HuggingFace on first use)
+
+### Known Limitations
+
+- **First audio message**: Takes ~10s to process (model loading). Subsequent messages: ~5s each (local LM Studio CPU).
+- **Synthetic audio**: Sine waves at 440Hz will NOT transcribe (language confidence < 0.5). This is CORRECT — the filter rejects non-speech. For real testing, use actual Vietnamese voice recordings.
+- **LM Studio quirks**: Local models sometimes output raw tool tokens like `<|tool_call>call:get_current_time{}<|tool_call|>`. These are now stripped before sending to client.
+- **Session timeout**: 120s lock per message (prevents concurrent processing). Set longer timeouts if using very slow local models.
 
 ---
 
@@ -100,13 +175,16 @@ Widget được xây dựng bằng **Preact** và **Vite**, thiết kế theo ph
 
 ## 🗄️ Quản lý Database & Migration
 
-Hệ thống sử dụng **PostgreSQL** với 3 thành phần quản lý schema khác nhau:
+Hệ thống dùng **hai** PostgreSQL độc lập, mỗi instance quản lý schema riêng:
 
-1. **LiteLLM Tables**: Được tự động khởi tạo bởi LiteLLM proxy khi container startup.
-2. **LangGraph Checkpointers**: Tự động tạo các bảng `checkpoints`, `checkpoint_blobs`,... khi Backend khởi động (thông qua `AsyncPostgresSaver`).
-3. **Chatbot Service Tables**: Quản lý bởi **Alembic** (UserProfile, ChatInteraction, SessionMetadata).
+| Instance | Port host | Quản lý bởi | Nội dung |
+|---|---|---|---|
+| `postgres` | **5432** | Alembic + LangGraph | UserProfile, ChatInteraction, SessionMetadata, Checkpoints |
+| `postgres_litellm` | **5433** | LiteLLM tự động | LiteLLM internal tables |
 
-### Cách chạy Migration (Alembic)
+> Việc tách biệt này loại bỏ hoàn toàn xung đột schema khi `docker compose down/up`: LiteLLM không còn ghi vào cùng database với core_backend nữa.
+
+### Cách chạy Migration (Alembic — chỉ cho `postgres`:5432)
 Nếu bạn thay đổi database model trong `app/memory/` hoặc `app/schemas/`, hãy chạy lệnh sau để cập nhật schema:
 
 ```bash
@@ -120,7 +198,7 @@ docker compose exec core_backend alembic upgrade head
 docker compose exec core_backend python scripts/setup_checkpointer.py
 ```
 
-*Lưu ý: Hệ thống đã được cấu hình để Alembic tự động bỏ qua (ignore) các bảng của LiteLLM và LangGraph khi so sánh schema.*
+*Lưu ý: Alembic chỉ connect đến `postgres:5432` (qua `DATABASE_URL` trong env). Không cần và không được chạy migration vào `postgres_litellm`.*
 
 ---
 

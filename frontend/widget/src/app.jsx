@@ -18,6 +18,7 @@ export function App() {
   const thoughtRef = useRef(""); // Accumulates thought chunks as one string
   const [pendingMetadata, setPendingMetadata] = useState(null);
   const metadataRef = useRef(null);
+  const initializingRef = useRef(false);
 
 
 
@@ -29,77 +30,106 @@ export function App() {
   const [authError, setAuthError] = useState(false);
   const [capabilities, setCapabilities] = useState({ vision: false, audio: false });
 
+  // Helper: request a new server-side session. Re-fetches token on 401 via socketService.refresh()
+  const ensureSession = async (oldSessionId = null) => {
+    if (!oldSessionId && (localStorage.getItem("smart_bot_session_id") || initializingRef.current)) return;
+    initializingRef.current = true;
+    const url = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+
+    const fetchSession = async () => {
+      const options = {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${socketService.accessToken}`
+        }
+      };
+      if (oldSessionId) {
+        options.body = JSON.stringify({ old_session_id: oldSessionId });
+      }
+      return await fetch(`${url}/api/v1/chat/new-session`, options);
+    };
+
+    try {
+      console.log("[Auth] Requesting new server-side session...");
+      let resp = await fetchSession();
+      
+      if (resp.status === 401 || resp.status === 403) {
+        console.warn("[Auth] Token expired during ensureSession, trying refresh...");
+        const refreshed = await socketService.refresh();
+        if (refreshed) {
+          resp = await fetchSession(); // retry
+        } else {
+          console.error("[Auth] EnsureSession refresh failed.");
+          if (socketService.onAuthFailure) socketService.onAuthFailure();
+          return;
+        }
+      }
+
+      if (resp.ok) {
+        const r = await resp.json();
+        setSessionId(r.data.session_id);
+        localStorage.setItem("smart_bot_session_id", r.data.session_id);
+        console.log("[Auth] Session acquired:", r.data.session_id);
+      } else {
+        console.warn("[Auth] Session request failed:", resp.status);
+        setAuthError(true);
+      }
+    } catch (err) {
+      console.error("[Auth] ensureSession error:", err);
+    } finally {
+      initializingRef.current = false;
+    }
+  };
+
   useEffect(() => {
     // 1. Start reporting height to parent for dynamic resize
     iframeSync.startResizing();
 
-    // 2. Setup Auth Error handling
+    // 2. Socket lifecycle callbacks — direct callbacks (not handlers Map) so each
+    //    socket instance gets fresh closures with no cross-socket flag sharing.
+    socketService.onConnect = async () => {
+      console.log("[App] Socket connected — clearing auth error");
+      setAuthError(false);
+      await ensureSession();
+    };
+
+
+    socketService.onDisconnect = (reason) => {
+      console.error("[App] Unexpected socket disconnect:", reason);
+      setAuthError(true);
+      setMessages((prev) => [...prev, {
+        sender: 'bot',
+        text: `⚠️ Kết nối bị mất: ${reason}. Vui lòng tải lại trang.`
+      }]);
+      setLoading(false);
+    };
+
     socketService.onAuthFailure = () => {
       setAuthError(true);
       setMessages((prev) => [...prev, {
         sender: 'bot',
-        text: "⚠️ Session expired. Please refresh the page or login again from the main site."
+        text: "⚠️ Phiên đăng nhập hết hạn. Vui lòng tải lại trang hoặc đăng nhập lại."
       }]);
     };
 
-    // 3. Listen for auth tokens from parent site
-    iframeSync.listenForEvents((type, payload) => {
+    // Listen for auth tokens from parent site (iframe embed mode — primary auth path)
+    iframeSync.listenForEvents(async (type, payload) => {
       if (type === "auth") {
-        console.log("Received JWT Auth via postMessage");
+        console.log("[Auth] Received JWT via postMessage from parent page");
         setAuthError(false);
-        socketService.connect(payload);
+        socketService.connect(payload);  // Passes new token, resets fail counter
       }
     });
 
-    // 4. Standalone/First-load Auto Login & Strict Session Check
+    // First-load: connect if token already cached in localStorage (returning user)
     const initializeAuthAndSession = async () => {
-      const url = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
-      try {
-        let isConnected = false;
-
-        // Try auto-login if no token
-        if (!socketService.accessToken) {
-          const response = await fetch(`${url}/api/v1/auth/login`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ user_id: "guest-" + Math.random().toString(36).substring(7) })
-          });
-          if (response.ok) {
-            const result = await response.json();
-            console.log("Acquired Guest Token for development");
-            socketService.setTokens(result.data.access_token, result.data.refresh_token);
-            socketService.connect();
-            isConnected = true;
-          } else if (response.status === 401 || response.status === 403) {
-            console.warn("Guest login restricted (security enforced)");
-            setAuthError(true);
-            socketService.clearTokens();
-          }
-        } else {
-          socketService.connect();
-          isConnected = true;
-        }
-
-        // Enforce Strict Server-side Session
-        if (isConnected && !session_id) {
-          console.log("No session found. Requesting explicit new session from Backend...");
-          const sessionResp = await fetch(`${url}/api/v1/chat/new-session`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${socketService.accessToken}`
-            }
-          });
-          if (sessionResp.ok) {
-            const sResult = await sessionResp.json();
-            setSessionId(sResult.data.session_id);
-            localStorage.setItem("smart_bot_session_id", sResult.data.session_id);
-            console.log("Strict Session acquired:", sResult.data.session_id);
-          }
-        }
-      } catch (err) {
-        console.error("Initialization failed:", err);
+      if (!socketService.accessToken) {
+        console.warn("[Auth] No access token on load. Waiting for JWT from parent page.");
+        return;
       }
+      console.log("[Auth] Cached access token found. Connecting...");
+      socketService.connect();
     };
 
     initializeAuthAndSession();
@@ -154,22 +184,11 @@ export function App() {
       setCapabilities(config);
     });
 
-    // Socket connection state tracking
-    if (socketService.socket) {
-      socketService.socket.on("disconnect", (reason) => {
-        console.error("[CRITICAL] Socket DISCONNECTED, reason:", reason);
-        setAuthError(true);
-        setMessages((prev) => [...prev, {
-          sender: 'bot',
-          text: `⚠️ Kết nối bị mất: ${reason}. Vui lòng tải lại trang.`
-        }]);
-        setLoading(false);
-      });
-
-      socketService.socket.on("connect_error", (err) => {
-        console.error("[CRITICAL] Socket CONNECTION ERROR:", err.message);
-      });
-    }
+    // NOTE: connect/disconnect lifecycle events are handled via
+    // socketService.onConnect / socketService.onDisconnect direct callbacks
+    // (set at lines 38-51 above). Do NOT register them via socketService.on()
+    // — that would re-add them to the handlers Map and cause double-handler
+    // registration on every new socket instance.
 
     socketService.on("error", (data) => {
       console.error("FE Debug: Received error event from backend:", data);
@@ -189,7 +208,9 @@ export function App() {
     });
 
 
-    return () => socketService.disconnect();
+    // Intentional disconnect on unmount — prevents the onDisconnect callback
+    // from firing with authError=true during hot-reload / Strict Mode double invocations.
+    return () => socketService.disconnect(true);
   }, []);
 
   // Helper: convert Blob to base64 data URL with timeout protection
@@ -214,10 +235,12 @@ export function App() {
   };
 
   const handleSendMessage = async (text, attachments = {}) => {
+    const localAudioUrl = (attachments.audio && attachments.audio instanceof Blob) ? URL.createObjectURL(attachments.audio) : null;
     const userMsg = {
       sender: 'user',
       text: text || (attachments.audio ? "🎤 Audio message" : "📸 Image message"),
-      attachments
+      attachments,
+      localAudioUrl
     };
 
     setMessages((prev) => [...prev, userMsg]);
@@ -316,40 +339,45 @@ export function App() {
     ));
   };
 
+  useEffect(() => {
+    // Expose for E2E testing
+    window.testVoiceSend = handleSendMessage;
+    return () => delete window.testVoiceSend;
+  }, [handleSendMessage]);
+
+
+
+  const [newSessionInProgress, setNewSessionInProgress] = useState(false);
 
   const handleNewSession = async () => {
-    const url = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+    if (newSessionInProgress) return;  // Guard: prevent double-click / concurrent calls
+    setNewSessionInProgress(true);
+
     try {
-      const response = await fetch(`${url}/api/v1/chat/new-session`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${socketService.accessToken}`
-        },
-        body: JSON.stringify({ old_session_id: session_id })
-      });
-      if (response.ok) {
-        const result = await response.json();
-        const newSessionId = result.data.session_id;
-        console.log("Session reset success:", newSessionId);
+      // 1. Fetch new session explicitly via our resilient helper
+      await ensureSession(session_id);
+      
+      console.log("Session reset success");
 
-        // 1. Update State & Storage
-        setSessionId(newSessionId);
-        localStorage.setItem("smart_bot_session_id", newSessionId);
+      // 2. Reset UI state
+      setLoading(false);
+      partialRef.current = "";
+      thoughtRef.current = "";
+      setPartialResponse("");
+      setCurrentThought("");
+      setPendingMetadata(null);
+      metadataRef.current = null;
+      setMessages([{
+        sender: 'bot',
+        text: "✨ Cuộc hội thoại hoàn toàn mới đã được bắt đầu. Em có thể hỗ trợ gì cho anh/chị ạ?"
+      }]);
 
-        // 2. Clear Messages UI
-        setMessages([{
-          sender: 'bot',
-          text: "✨ Cuộc hội thoại hoàn toàn mới đã được bắt đầu. Em có thể hỗ trợ gì cho anh/chị ạ?"
-        }]);
-
-        // 3. Reconnect socket with new thread awareness (though socket uses thread_id per message, 
-        // a fresh connection ensures no stale state)
-        socketService.disconnect();
-        socketService.connect();
-      }
-    } catch (err) {
-      console.error("Failed to reset session:", err);
+      // 3. Reconnect socket — mark as intentional so disconnect handler skips auth error.
+      // onConnect will fire, but ensureSession() will skip because it just wrote to localStorage.
+      socketService.disconnect(true);
+      socketService.connect();
+    } finally {
+      setNewSessionInProgress(false);  // Always re-enable button
     }
   };
 
@@ -427,8 +455,10 @@ export function App() {
                 className="icon-btn"
                 onClick={handleNewSession}
                 title="New Conversation"
+                disabled={newSessionInProgress}
+                style={newSessionInProgress ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
               >
-                <RefreshCcw size={18} />
+                <RefreshCcw size={18} className={newSessionInProgress ? 'spin' : ''} />
               </button>
               <button
                 className="icon-btn"
@@ -458,7 +488,7 @@ export function App() {
 
           <InputArea
             onSendMessage={handleSendMessage}
-            msgInProgress={false}
+            msgInProgress={loading}
             capabilities={capabilities}
           />
 

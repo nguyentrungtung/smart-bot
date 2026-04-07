@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # Embedding Settings
+    EMBEDDING_MODEL: str = "lm-studio-embedding"
     EMBEDDING_DIM: int = 768  # Standardized to 768 for both Local and Cloud compatibility
 
     # LiteLLM
@@ -28,20 +29,27 @@ class Settings(BaseSettings):
     GUARDS_ENABLED: bool = True
 
     # SocketIO CORS Origins
-    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://localhost:8080"]
+    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:8080"]
     
     # MCP Security
     MCP_SERVER_URL: str = "http://localhost:8001"
     MCP_INTERNAL_API_KEY: str = "dev-secure-mcp-key-123"
 
     # Memory Settings (Hybrid)
-    # MAX_HISTORY_TOKENS: int = 1000  # Lowered further for stability
-    # SUMMARY_THRESHOLD: int = 600    # Summarize even earlier
-    MAX_HISTORY_TOKENS: int = 500  # Lowered further for testing
-    SUMMARY_THRESHOLD: int = 300    # Summarize even earlier
-    MAX_RESPONSE_TOKENS: int = 500  # Prevent AI from generating too long a response
-    MAX_HISTORY_MESSAGES: int = 10 # Threshold for summarization based on message count
+    # Context window target: local models with 35k-65k token context.
+    # We use ~25% of context for history before summarizing, keeping 75% free for
+    # RAG docs, system prompt, and response generation.
+    MAX_HISTORY_TOKENS: int = 8000   # Hard trim: ~25% of a 35k context window
+    SUMMARY_THRESHOLD: int = 6000    # Trigger summarizer before hard trim kicks in
+    MAX_RESPONSE_TOKENS: int = 2048  # Allow richer responses from capable local models
+    MAX_HISTORY_MESSAGES: int = 50   # Message count fallback threshold
     LITELLM_RETRY_COUNT: int = 3
+    LLM_TIMEOUT_SECONDS: int = 60  # Max wait for any single LLM completion call
+    # faster-whisper (SYSTRAN/faster-whisper, Apache-2.0) — runs fully offline, no API key.
+    # Sizes: tiny(74MB) | base(142MB) | small(466MB) | medium(1.5GB)
+    # Vietnamese WER benchmark: tiny=10.4% | base=8.5% | small=6.3% | medium=5.0%
+    # "small" = recommended for Vietnamese (good accuracy, reasonable CPU load).
+    WHISPER_MODEL_SIZE: str = "large-v3"
 
     # Telegram HITL
     TELEGRAM_BOT_TOKEN: str = "" # If empty, HITL will mock approval output

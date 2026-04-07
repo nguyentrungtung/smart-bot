@@ -11,6 +11,19 @@ from langchain_core.messages import AIMessage
 
 logger = logging.getLogger("stream_handler")
 
+# Local models (LM Studio / llama.cpp) leak raw tool-call tokens into content.
+# These must be stripped before sending to the client.
+_TOOL_LEAK_PATTERN = re.compile(
+    r'<\|?tool_call\|?>.*?(?:<\|?/tool_call\|?>|$)'      # <tool_call|>...</tool_call|>
+    r'|<tool_response>.*?(?:</tool_response>|$)'           # <tool_response>...</tool_response>
+    r'|<\|tool_call_id\|>.*?(?:<\|/tool_call_id\|>|$)',   # <|tool_call_id|>...</|tool_call_id|>
+    re.DOTALL
+)
+
+# Minimum buffer size before flushing to socket — batches tiny chunks
+# from slow local models to reduce socket event count.
+_STREAM_FLUSH_SIZE = 12  # chars
+
 
 def parse_thinking_tags(content: str) -> tuple[str, str]:
     """
@@ -105,7 +118,7 @@ async def handle_streaming(
                 if think_part and sio and sid:
                     from app.config.settings import settings
                     if settings.LOG_LEVEL.upper() == "DEBUG":
-                        print(f"--- [AI THINKING] --- {think_part}")
+                        logger.debug(f"[AI THINKING]: {think_part}")
                     await sio.emit("thought_stream", {"content": think_part}, room=sid)
                 buffer = rest
                 in_thinking = False
@@ -113,31 +126,44 @@ async def handle_streaming(
                     await sio.emit("message_stream", {"chunk": buffer}, room=sid)
                     buffer = ""
             else:
-                # Flush safe portion of thinking buffer (keep last 11 chars for tag detection)
-                if len(buffer) > 11:
-                    safe = buffer[:-11]
+                # Keep last 11 chars to detect closing tag across chunks
+                THINK_TAG_LEN = 11
+                if len(buffer) > _STREAM_FLUSH_SIZE + THINK_TAG_LEN:
+                    safe = buffer[:-(THINK_TAG_LEN)]
                     if sio and sid:
                         await sio.emit("thought_stream", {"content": safe}, room=sid)
-                    buffer = buffer[-11:]
+                    buffer = buffer[-(THINK_TAG_LEN):]
         else:
-            # Flush safe portion of message buffer (keep last 10 chars for tag detection)
-            if len(buffer) > 10:
-                safe = buffer[:-10]
-                if sio and sid:
+            # Keep last 10 chars to detect opening/closing tags across chunks.
+            # Only flush when we have enough content to make emit worthwhile.
+            MSG_TAG_LEN = 10
+            if len(buffer) > _STREAM_FLUSH_SIZE + MSG_TAG_LEN:
+                safe = buffer[:-(MSG_TAG_LEN)]
+                # Strip any embedded tool-call leak tokens before emitting.
+                # Using sub() handles partial tokens that span multiple chunks
+                # (fullmatch would only catch chunks that are *entirely* a token).
+                safe = _TOOL_LEAK_PATTERN.sub("", safe).strip()
+                if safe and sio and sid:
                     await sio.emit("message_stream", {"chunk": safe}, room=sid)
-                buffer = buffer[-10:]
+                buffer = buffer[-(MSG_TAG_LEN):]
 
     # Flush remaining buffer
     if buffer:
         if in_thinking and sio and sid:
             await sio.emit("thought_stream", {"content": buffer}, room=sid)
         elif sio and sid:
-            await sio.emit("message_stream", {"chunk": buffer}, room=sid)
+            clean_buf = _TOOL_LEAK_PATTERN.sub("", buffer).strip()
+            if clean_buf:
+                await sio.emit("message_stream", {"chunk": clean_buf}, room=sid)
 
     logger.info(f"Streaming done: {chunk_count} chunks, {len(full_content)} chars total, tool_calls={len(tool_calls_acc)}")
 
+    if chunk_count == 0:
+        logger.warning(f"handle_streaming: received 0 chunks for sid={sid}. Model returned empty stream.")
+
     # Build AIMessage
-    usage = getattr(chunk, "usage", None) if 'chunk' in locals() else None
+    last_chunk = locals().get("chunk")
+    usage = getattr(last_chunk, "usage", None) if last_chunk is not None else None
     token_count = 0
     if usage:
         token_count = getattr(usage, "total_tokens", 0)
@@ -145,7 +171,9 @@ async def handle_streaming(
         # Fallback if usage is not in chunk (some providers don't send it in stream)
         token_count = int(len(full_content.split()) * 1.4)
 
-    clean = re.sub(r"<thinking>.*?</thinking>", "", full_content, flags=re.DOTALL).strip()
+    # Strip thinking tags and local-model tool-call token leaks from final content
+    clean = re.sub(r"<thinking>.*?</thinking>", "", full_content, flags=re.DOTALL)
+    clean = _TOOL_LEAK_PATTERN.sub("", clean).strip()
     ai_msg = AIMessage(
         content=clean or full_content,
         additional_kwargs={"token_count": token_count}
@@ -163,9 +191,15 @@ def _accumulate_tool_calls(
     delta_tcs: list,
     acc: list[dict],
 ) -> None:
-    """Accumulate streamed tool call fragments."""
+    """Accumulate streamed tool call fragments.
+
+    NOTE: Only the FIRST chunk for a given index carries the tool call ID.
+    Subsequent chunks carry name/argument deltas but repeat the same ID.
+    We must NOT concatenate the ID across chunks — only capture it once.
+    """
     for tc in delta_tcs:
         if tc.index >= len(acc):
+            # First chunk for this tool call — capture ID here and only here.
             acc.append({
                 "id": tc.id or f"call_{tc.index}",
                 "function": {
@@ -174,8 +208,7 @@ def _accumulate_tool_calls(
                 },
             })
         else:
-            if tc.id:
-                acc[tc.index]["id"] += tc.id
+            # Subsequent chunks — append name/args deltas, IGNORE id (already set).
             if tc.function.name:
                 acc[tc.index]["function"]["name"] += tc.function.name
             if tc.function.arguments:

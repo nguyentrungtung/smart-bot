@@ -26,17 +26,21 @@ def is_local_model(model_name: str) -> bool:
 def detect_capabilities(model_name: str, env_override: bool | None = None) -> dict:
     lower = model_name.lower()
     model_type = "local" if is_local_model(lower) else "cloud"
-    
+
     if env_override is False:
-        return {"vision": False, "audio": False, "model_type": model_type}
+        return {"vision": False, "stt": False, "model_type": model_type}
     if env_override is True:
-        return {"vision": True, "audio": True, "model_type": model_type}
-    
-    has_vision = any(lower.startswith(p) for p in VISION_PROVIDERS)
-    has_audio = any(lower.startswith(p) for p in AUDIO_PROVIDERS)
-    
-    logger.info(f"MULTIMODAL CAPABILITIES: model={model_name}, vision={has_vision}, audio={has_audio}")
-    return {"vision": has_vision, "audio": has_audio, "model_type": model_type}
+        return {"vision": True, "stt": True, "model_type": model_type}
+
+    # Use substring match (not startswith) to handle prefixed model names
+    # e.g. "openai/gemini-2.0-flash", "google/gemini-pro" — common LiteLLM proxy formats
+    has_vision = any(p in lower for p in VISION_PROVIDERS)
+    # STT is server-side via faster-whisper — available regardless of LLM model.
+    # We expose this as "stt" (not "audio") to distinguish from native LLM audio input.
+    has_stt = True
+
+    logger.info(f"MULTIMODAL CAPABILITIES: model={model_name}, vision={has_vision}, stt={has_stt}")
+    return {"vision": has_vision, "stt": has_stt, "model_type": model_type}
 
 def get_capabilities() -> dict:
     env_override = getattr(settings, "MULTIMODAL_ENABLED", None)

@@ -49,9 +49,26 @@ docker-compose exec core_backend python scripts/clear_memory.py --all
 - **Multimodal Chat (Voice/Vision) & Auto-Detection**: 
   - **Auto-Detection Logic**: The system automatically detects capabilities (Vision, Audio) based on the `LLM_MODEL` name or `.env` override (`MULTIMODAL_ENABLED`). Gemini 2.5-flash enables these features by default.
   - **Refactored Architecture**: All media processing is consolidated in the `app/multimodal` package.
-  - **Native Multimodal (Gemini 2.5)**: The implementation leverages Gemini 2.5's native multimodal capabilities. Audio and images are sent as `base64` fragments within standard content blocks. 
-  - **Vision**: `MultimodalProcessor` converts images into LiteLLM `image_url` blocks.
-  - **Voice**: Supports both native `input_audio` blocks for Gemini and explicit STT (Whisper) via LiteLLM if the model requires pre-transcribed text.
+  
+  - **Vision Pipeline**: `MultimodalProcessor` converts base64 images into LiteLLM `image_url` blocks (data URI format). Images are validated for size (< 4MB) before sending to model. After generation, `vision_scrubber` node optionally replaces images with text descriptions to save tokens in future turns.
+  
+  - **Voice/Audio Pipeline (Server-Side STT — Community Standard)**:
+    - **Why STT-First?** Model-agnostic approach (works with all LLM backends: LM Studio, Gemini, OpenAI). Avoids input_audio format fragmentation (OpenAI Realtime vs Gemini Live vs local models). Transcription is auditable and can be logged/reviewed.
+    - **Architecture**: Browser captures audio (webm/ogg/mp4) → base64 encode → Socket.IO → Backend processes in 4 steps
+    - **Step 1 — DECODE**: base64 string → raw audio bytes via `base64.b64decode()`
+    - **Step 2 — CONVERT**: FFmpeg pipe (async subprocess) converts any format → 16kHz mono PCM s16le. Zero temp files; all I/O via stdin/stdout pipes (memory-only pipeline)
+    - **Step 3 — PARSE**: numpy `frombuffer` (raw bytes → float32 array, normalized [-1.0, 1.0])
+    - **Step 4 — TRANSCRIBE**: faster-whisper (SYSTRAN, 21.9k⭐) Vietnamese STT
+      - Runs in thread executor (CPU-bound, non-blocking event loop)
+      - Lazy-loads model on first call (~10s delay), then cached in memory
+      - Configuration: `language="vi"`, `vad_filter=True` (eliminates silence), `beam_size=5`, `condition_on_previous_text=False`
+      - **Language Confidence Filter**: If `language_probability < 0.5`, returns empty string (rejects noise, silence, wrong language hallucinations)
+    - **Output Injection**: Transcription injected as text block: `[Giọng nói của người dùng]: {transcribed_text}` → passed to LLM as part of user message
+    - **Error Handling**: 
+      - Audio too short (< 300ms) → `[Giọng nói quá ngắn]`
+      - FFmpeg timeout (> 30s) → `[Lỗi xử lý audio (quá lâu)]`
+      - STT timeout (> 30s) → `[Lỗi nhận diện giọng nói (quá lâu)]`
+      - Low confidence → `[Không nhận diện được giọng nói]` (empty transcription passed through)
 - **WebSocket Reconnection & Message Recovery**: To handle mobile networks or brief disconnects, the JS Widget implements a robust connection recovery strategy. If the WebSocket drops, the client automatically reconnects and passes a `last_message_id` payload. The `socket_handler` backend queries the active LangGraph/Redis state and instantly re-streams any tokens or messages the user missed during the exact window of disconnection.
 - **Agentic Reasoning UI (`<thinking>` tags) & Concurrency Locks**: 
   - System prompts instruct the model to wrap its internal tool selection and scratchpad reasoning in `<thinking>` tags. 
@@ -109,5 +126,57 @@ docker-compose exec core_backend python scripts/clear_memory.py --all
 - **Automatic LiteLLM Failover**: To prevent the "bottleneck" of high concurrency hitting the local LM Studio instance, `config.yaml` is configured with strict LiteLLM proxy **Routing Strategies** (e.g., `num_retries`, `fallbacks`, `rpm` limits). If the local LM Studio model queue backing up, the proxy automatically, invisibly routes the overflow traffic to the high-concurrency cloud provider (OpenAI `gpt-4o`), guaranteeing zero latency spikes for users without any manual intervention.
 - **RAG Refinement**: Dedicated separate Vector databases (Milvus) can be implemented if the Postgres table swells to excessive sizes.
 
-## 10. Limitations
+## 10. Voice/Audio Chat Testing & Validation
+
+### Test Suite: `test_voice_chat.py`
+Located at `core_backend/scripts/test_voice_chat.py`. Validates the complete audio pipeline end-to-end with 7 turns (4 voice, 3 text) in Vietnamese.
+
+**Test Scenario**:
+- T1 (VOICE): Synthetic audio greeting → AI gracefully asks to repeat if STT fails
+- T2 (TEXT): AI identity question → RAG response about SmartSales Assistant
+- T3 (VOICE+TEXT): "mấy giờ rồi" (time query) → tool call + response with current time
+- T4 (VOICE+TEXT): "thời tiết hà nội" (weather) → tool call with location parameter
+- T5 (TEXT): "Tôi tên là Minh..." → profile seeding, AI acknowledges
+- T6 (VOICE+TEXT): "smart bot có những tính năng gì" → RAG search about product features
+- T7 (TEXT): "Bạn có nhớ tên tôi không?" → memory recall, AI should answer "Minh"
+
+**Execution**:
+```bash
+docker compose exec core_backend python scripts/test_voice_chat.py
+```
+
+**Expected Output**: 7/7 PASS. Verifies:
+- Audio pipeline steps [1/4] DECODE → [4/4] TRANSCRIBE in backend logs
+- Streaming chunks arrive with `chunk` key (not `content`)
+- Guard bypass responses are streamed (no empty responses)
+- Profile extraction works (name stored and recalled)
+- Session lock releases immediately after `message_complete` (background nodes drain separately)
+
+### Audio Pipeline Gotchas for Developers
+
+1. **Synthetic Audio for Testing**: Sine waves at 440Hz will NOT transcribe (language confidence < 0.5). This is CORRECT behavior — the pipeline is rejecting non-speech audio. For real transcription testing, use pre-recorded Vietnamese WAV clips or actual user voice.
+
+2. **Faster-Whisper Model Loading**: First audio message in a session will take ~10s if model hasn't been pre-warmed. The backend now pre-warms the model at startup (via `main.py`'s `_prewarm_whisper()`). If you see 30s+ delays on first message, check that `✅ faster-whisper model pre-warmed and ready.` appears in startup logs.
+
+3. **FFmpeg Pipe I/O**: The pipeline uses `asyncio.create_subprocess_exec` with stdin/stdout pipes. FFmpeg MUST be installed on the system. The binary is detected via `PATH`. Test with: `which ffmpeg` or `ffmpeg -version`.
+
+4. **Socket Event Key Convention**: Streaming uses `{"chunk": "..."}` throughout. Messages, thoughts, and responses all follow this pattern. Do NOT change to `{"content": "..."}` without updating all emitters and receivers.
+
+5. **Streaming Fragment Handling**: Tools-call tokens or other patterns may arrive split across multiple `message_stream` events. Use `re.sub()` with pattern stripping on each chunk, not `fullmatch()` (which only works for complete tokens).
+
+6. **Language-Specific VAD**: The VAD (Voice Activity Detection) filter is tuned for Vietnamese with `min_silence_duration_ms=300` and `speech_pad_ms=200`. Adjust if testing other languages.
+
+7. **Guard Bypass Response Streaming**: When the guard node returns a fallback message, it MUST be streamed via `message_stream` event before `message_complete`. Otherwise, the response appears empty on the client. This is now handled in `generate.py` line 53.
+
+### Known Model Quirks (LM Studio Local)
+
+- **Tool-Call Token Leak**: LM Studio outputs raw `<|tool_call>call:TOOL_NAME{...}<|tool_call|>` tokens even when tools are not provided (`use_tools=None`). The stream handler now strips these via regex before emitting to the client.
+- **Template Substitution**: Some LM Studio models respond with template placeholders like `{{get_current_time()}}` instead of actually executing tool calls. This is a model training limitation, not a backend bug. Workaround: ensure the tool description is clear and the model is properly fine-tuned, or accept the placeholder and handle gracefully in the UI.
+- **Slow Response**: Local LM Studio models run on CPU (no GPU). Response generation for longer outputs (> 500 tokens) may take 30-60s. Set `TURN_TIMEOUT=240s` to accommodate.
+
+---
+
+## 11. Limitations
 - Security relies entirely on the HTTP API Gateway rules and the `iframe` browser security model (`postMessage` origin enforcement); any failure in the Nginx config could expose internal MCP tool routes.
+- Audio STT pipeline depends on FFmpeg binary and faster-whisper availability; if either is missing, audio messages will fail gracefully with error text.
+- Local LM Studio model performance is CPU-bound; GPU acceleration is not currently configured. High concurrency (100+ users) will require horizontal scaling via Redis pub/sub or fallover to cloud LLM (Gemini/OpenAI).

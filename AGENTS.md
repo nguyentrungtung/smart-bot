@@ -47,8 +47,9 @@ core_backend/                         # Backend Service (FastAPI + LangGraph)
 |   |   |-- auth.py                   # Token validation & Blacklisting (Redis)
 |   |   |-- pii_scrubber.py           # PII detection and masking
 |   |-- multimodal/                   # Vision/Voice processing
+|   |   |-- audio_pipeline.py         # Server-side STT: FFmpeg → faster-whisper (Vietnamese)
 |   |   |-- capabilities.py           # Multimodal feature flags & detection
-|   |   |-- processor.py              # Base64 media processing for LLMs
+|   |   |-- processor.py              # Base64 media processing for LLMs (Vision + STT)
 |   |-- prompts/                      # LLM Persona & Prompting
 |   |   |-- templates/                # Reusable prompt definitions
 |   |   |   |-- advisor.py            # Primary Sales Advisor persona
@@ -71,13 +72,16 @@ core_backend/                         # Backend Service (FastAPI + LangGraph)
 |           |-- message_converter.py  # Message format harmonization
 |           |-- profile_analyzer.py   # User intent & interest extraction
 |           |-- rag_search.py         # Knowledge base retrieval (RAGFlow/Posgres)
-|           |-- stream_handler.py     # Token-by-token streaming logic
+|           |-- stream_handler.py     # Token-by-token streaming logic + tool-call token stripping
 |           |-- summarizer.py         # Context compression & memory management
 |           |-- tool_defs.py          # Dynamic tool schema generation
 |           |-- tools.py              # Unified tool execution engine
+|           |-- vision_scrubber.py    # Multimodal cleanup (replace images with text descriptions)
 |-- scripts/                          # DevOps & Maintenance tools
 |   |-- seed_db.py                    # Seeds DB with Admin & RAG data
 |   |-- clear_memory.py               # Maintenance: Truncate Short/Long term memory (e.g. `python scripts/clear_memory.py --short-term` to clear LangGraph checkpoints, blobs, and writes)
+|   |-- test_12turn_scenario.py       # E2E test: 12-turn conversation with tool calls, RAG, profile memory, session isolation (17/17 PASS)
+|   |-- test_voice_chat.py            # E2E test: 7-turn Vietnamese voice chat with 4 voice + 3 text turns (7/7 PASS)
 |-- tests/                            # Pytest test suite
 |-- alembic.ini                       # Migration config
 |-- Dockerfile                        # Backend container recipe
