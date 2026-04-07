@@ -154,6 +154,23 @@ export function App() {
       setCapabilities(config);
     });
 
+    // Socket connection state tracking
+    if (socketService.socket) {
+      socketService.socket.on("disconnect", (reason) => {
+        console.error("[CRITICAL] Socket DISCONNECTED, reason:", reason);
+        setAuthError(true);
+        setMessages((prev) => [...prev, {
+          sender: 'bot',
+          text: `⚠️ Kết nối bị mất: ${reason}. Vui lòng tải lại trang.`
+        }]);
+        setLoading(false);
+      });
+
+      socketService.socket.on("connect_error", (err) => {
+        console.error("[CRITICAL] Socket CONNECTION ERROR:", err.message);
+      });
+    }
+
     socketService.on("error", (data) => {
       console.error("FE Debug: Received error event from backend:", data);
       setMessages((prev) => [...prev, {
@@ -175,12 +192,23 @@ export function App() {
     return () => socketService.disconnect();
   }, []);
 
-  // Helper: convert Blob to base64 data URL
-  const blobToBase64 = (blob) => {
+  // Helper: convert Blob to base64 data URL with timeout protection
+  const blobToBase64 = (blob, timeout = 30000) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.onerror = reject;
+      const timer = setTimeout(() => {
+        reader.abort();
+        reject(new Error(`Base64 conversion timeout after ${timeout}ms`));
+      }, timeout);
+
+      reader.onloadend = () => {
+        clearTimeout(timer);
+        resolve(reader.result);
+      };
+      reader.onerror = (err) => {
+        clearTimeout(timer);
+        reject(err || new Error("FileReader error"));
+      };
       reader.readAsDataURL(blob);
     });
   };
@@ -210,11 +238,26 @@ export function App() {
     // Convert audio Blob to base64 data URL before sending
     if (attachments.audio && attachments.audio instanceof Blob) {
       try {
-        const audioBase64 = await blobToBase64(attachments.audio);
+        // Pre-check: warn if audio blob is suspiciously large (>50MB raw = ~66MB base64)
+        const audioMB = (attachments.audio.size / 1024 / 1024).toFixed(2);
+        if (attachments.audio.size > 50 * 1024 * 1024) {
+          throw new Error(`Audio quá lớn: ${audioMB}MB (max 50MB)`);
+        }
+
+        // Convert with 60s timeout (handles very large files on slow networks)
+        const audioBase64 = await blobToBase64(attachments.audio, 60000);
+        const base64MB = (audioBase64.length / 1024 / 1024).toFixed(2);
+
         payload.audio = audioBase64;
-        console.log("FE Debug: Converted audio Blob to base64, length:", audioBase64.length);
+        console.log("FE Debug: Audio converted, base64 size:", base64MB, "MB (raw was", audioMB, "MB)");
       } catch (err) {
-        console.error("FE Error: Failed to convert audio Blob:", err);
+        console.error("FE Error: Audio processing failed:", err.message);
+        setMessages((prev) => [...prev, {
+          sender: 'bot',
+          text: `❌ Lỗi xử lý âm thanh: ${err.message}`
+        }]);
+        setLoading(false);
+        return;  // Stop sending if audio processing fails
       }
     }
 
