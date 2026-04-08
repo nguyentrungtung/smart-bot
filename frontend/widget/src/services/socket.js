@@ -21,10 +21,17 @@ class SocketService {
     }
 
     setTokens(access, refresh) {
-        this.accessToken = access;
-        if (refresh) this.refreshToken = refresh;
-        localStorage.setItem("sb_access_token", access);
-        if (refresh) localStorage.setItem("sb_refresh_token", refresh);
+        if (typeof access === 'object' && access !== null) {
+            // Handle case where access is an object (from login or postMessage)
+            this.accessToken = access.access_token || access.token;
+            this.refreshToken = access.refresh_token || this.refreshToken;
+        } else {
+            this.accessToken = access;
+            if (refresh) this.refreshToken = refresh;
+        }
+
+        if (this.accessToken) localStorage.setItem("sb_access_token", this.accessToken);
+        if (this.refreshToken) localStorage.setItem("sb_refresh_token", this.refreshToken);
     }
 
     clearTokens() {
@@ -51,8 +58,8 @@ class SocketService {
 
             if (response.status === 200) {
                 const result = await response.json();
-                this.setTokens(result.data.access_token);
-                console.log("[SocketService] Access token refreshed successfully");
+                this.setTokens(result.data); // Pass the whole object {access_token, refresh_token}
+                console.log("[SocketService] Tokens refreshed successfully");
                 return true;
             } else {
                 console.error("[SocketService] Token refresh failed:", response.status);

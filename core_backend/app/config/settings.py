@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     # JWT Auth Keypair location (absolute path resolver)
     KEYS_DIR: str = os.getenv("KEYS_DIR", "/app/.keys")
 
+    # Hugging Face
+    HF_TOKEN: str = "" # Set to avoid HF Hub rate limits and warnings during STT model downloads
+
+
 
 
     # Debug & Logging
@@ -74,3 +78,8 @@ class Settings(BaseSettings):
         extra = "ignore" # Required for skipping docker variables not defined here
 
 settings = Settings()
+
+# Ensure HF_TOKEN is in environment for Huggingface-Hub and other libraries
+if settings.HF_TOKEN:
+    os.environ["HF_TOKEN"] = settings.HF_TOKEN
+

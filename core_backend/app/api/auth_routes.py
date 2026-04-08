@@ -41,6 +41,7 @@ class ExchangeTokenRequest(BaseModel):
 
 class ExchangeTokenResponse(BaseModel):
     access_token: str = Field(..., description="JWT access token for the visitor")
+    refresh_token: str = Field(..., description="JWT refresh token for the visitor")
     visitor_id: str = Field(..., description="The ID assigned to the visitor")
 
 @router.post("/exchange-token", response_model=APIResponse[ExchangeTokenResponse])
@@ -66,12 +67,19 @@ async def exchange_token(
         # Format: partner:visitor
         scoped_visitor_id = f"{authenticated_partner_id}:{req.visitor_id}"
         
-        # Sign a new token for the visitor using RS256
-        # We don't necessarily need a refresh token for visitors as they are transient
+        # Sign new tokens for the visitor using RS256
+        # We now provide a refresh token for visitors so the widget can self-sustain
+        # for the duration of the refresh TTL (7 days) without parent assistance.
         visitor_token = create_access_token({
             "sub": scoped_visitor_id,
             "partner": authenticated_partner_id,
             "metadata": req.metadata or {}
+        })
+        
+        visitor_refresh_token = create_refresh_token({
+            "sub": scoped_visitor_id,
+            "partner": authenticated_partner_id,
+            "type": "refresh"
         })
         
         return {
@@ -80,6 +88,7 @@ async def exchange_token(
             "message": "Token exchange successful.",
             "data": {
                 "access_token": visitor_token,
+                "refresh_token": visitor_refresh_token,
                 "visitor_id": scoped_visitor_id
             }
         }

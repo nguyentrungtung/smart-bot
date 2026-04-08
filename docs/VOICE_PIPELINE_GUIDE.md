@@ -189,6 +189,9 @@ if info.language_probability < 0.5:  # < 50% confidence → reject
 - Thêm `initial_prompt`: Whisper sẽ bias về Vietnamese ngữ pháp
 - Set `language="vi"` (skip language detection) → 5-10% faster
 
+### 2.4 Environment Requirements
+- **HF_TOKEN**: Để tải các model chuyên dụng từ Hugging Face Hub mà không bị giới hạn rate limit, bắt buộc phải khai báo `HF_TOKEN` trong file `.env`.
+
 ---
 
 ## PHẦN 3: AI Response Output & Logging/History

@@ -65,8 +65,8 @@ class IframeSyncService {
             }
 
             if (event.data && event.data.type === "SMART_BOT_AUTH") {
-                const token = event.data.token || event.data.payload;
-                if (token) onEvent("auth", token);
+                const payload = event.data.tokens || event.data.token || event.data.payload;
+                if (payload) onEvent("auth", payload);
             }
         });
     }

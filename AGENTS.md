@@ -79,9 +79,10 @@ core_backend/                         # Backend Service (FastAPI + LangGraph)
 |           |-- vision_scrubber.py    # Multimodal cleanup (replace images with text descriptions)
 |-- scripts/                          # DevOps & Maintenance tools
 |   |-- seed_db.py                    # Seeds DB with Admin & RAG data
-|   |-- clear_memory.py               # Maintenance: Truncate Short/Long term memory (e.g. `python scripts/clear_memory.py --short-term` to clear LangGraph checkpoints, blobs, and writes)
-|   |-- test_12turn_scenario.py       # E2E test: 12-turn conversation with tool calls, RAG, profile memory, session isolation (17/17 PASS)
-|   |-- test_voice_chat.py            # E2E test: 7-turn Vietnamese voice chat with 4 voice + 3 text turns (7/7 PASS)
+|   |-- clear_memory.py               # Maintenance: Truncate Short/Long term memory
+|   |-- run_e2e_general.py            # Comprehensive 12-turn test (RAG, Tools, Memory, Isolation)
+|   |-- run_e2e_voice.py              # Multimodal Voice/STT E2E validation
+|   |-- run_tests.py                  # Pytest runner
 |-- tests/                            # Pytest test suite
 |-- alembic.ini                       # Migration config
 |-- Dockerfile                        # Backend container recipe
@@ -139,6 +140,8 @@ services:
 15. **NO** Guest Login: Authentication must always verify `user_id` and `password` against the `users` table; no unauthenticated token generation is allowed.
 16. **NO** Missing Embeddings: The `documents` table MUST contain both `content` and `embedding` (Vector 768) columns for RAG.
 17. **NO** Red Dot Ignored: The UI includes a Status Dot (Green: Connected, Red: Auth Error). If it turns red, the AI should advise the user to authenticate.
+18. **NO** Missing STT Token: Audio processing requires `HF_TOKEN` in `.env` for Hugging Face Hub authentication.
+19. **NO** Legacy Visitor Tokens: Visitor `exchange-token` MUST return both `access_token` and `refresh_token` for session persistence.
 
 ## 📁 Updated UI/UX Patterns
 - **Status Dot**: Header-level indicator for real-time authentication status.

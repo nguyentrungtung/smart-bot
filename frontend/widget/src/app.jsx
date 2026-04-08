@@ -32,7 +32,7 @@ export function App() {
 
   // Helper: request a new server-side session. Re-fetches token on 401 via socketService.refresh()
   const ensureSession = async (oldSessionId = null) => {
-    if (!oldSessionId && (localStorage.getItem("smart_bot_session_id") || initializingRef.current)) return;
+    if (!oldSessionId && (localStorage.getItem("smart_bot_session_id") || initializingRef.current)) return true;
     initializingRef.current = true;
     const url = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
@@ -53,7 +53,7 @@ export function App() {
     try {
       console.log("[Auth] Requesting new server-side session...");
       let resp = await fetchSession();
-      
+
       if (resp.status === 401 || resp.status === 403) {
         console.warn("[Auth] Token expired during ensureSession, trying refresh...");
         const refreshed = await socketService.refresh();
@@ -71,12 +71,15 @@ export function App() {
         setSessionId(r.data.session_id);
         localStorage.setItem("smart_bot_session_id", r.data.session_id);
         console.log("[Auth] Session acquired:", r.data.session_id);
+        return true;
       } else {
         console.warn("[Auth] Session request failed:", resp.status);
         setAuthError(true);
+        return false;
       }
     } catch (err) {
       console.error("[Auth] ensureSession error:", err);
+      return false;
     } finally {
       initializingRef.current = false;
     }
@@ -355,8 +358,16 @@ export function App() {
 
     try {
       // 1. Fetch new session explicitly via our resilient helper
-      await ensureSession(session_id);
-      
+      const success = await ensureSession(session_id);
+      if (!success) {
+        console.error("[NewSession] FAILED to acquire session (auth error)");
+        setMessages((prev) => [...prev, {
+          sender: 'bot',
+          text: "❌ Không thể bắt đầu phiên mới do lỗi xác thực. Vui lòng tải lại trang."
+        }]);
+        return;
+      }
+
       console.log("Session reset success");
 
       // 2. Reset UI state

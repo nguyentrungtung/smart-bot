@@ -61,6 +61,7 @@ docker-compose exec core_backend python scripts/clear_memory.py --all
     - **Step 4 — TRANSCRIBE**: faster-whisper (SYSTRAN, 21.9k⭐) Vietnamese STT
       - Runs in thread executor (CPU-bound, non-blocking event loop)
       - Lazy-loads model on first call (~10s delay), then cached in memory
+      - **Authentication**: Requires `HF_TOKEN` in `.env` for Hugging Face Hub access (higher rate limits).
       - Configuration: `language="vi"`, `vad_filter=True` (eliminates silence), `beam_size=5`, `condition_on_previous_text=False`
       - **Language Confidence Filter**: If `language_probability < 0.5`, returns empty string (rejects noise, silence, wrong language hallucinations)
     - **Output Injection**: Transcription injected as text block: `[Giọng nói của người dùng]: {transcribed_text}` → passed to LLM as part of user message
@@ -84,6 +85,7 @@ docker-compose exec core_backend python scripts/clear_memory.py --all
 - **Widget Authentication & Personalized Memory**:
   - **Secure Auth Injection & Status UI**: To identify users, the parent website securely passes an encrypted **JWT token** to the `iframe` via `postMessage`. 
     - **Status Dot Indicator**: The widget header includes a real-time status indicator (**Green**: Connected, **Red**: Auth Error).
+    - **Visitor Auth**: The `exchange-token` flow for visitors now returns both an `access_token` and a `refresh_token` to support long-lived sessions on satellite websites.
     - **Restricted Login**: Guest login without a password is disabled; authentication strictly verifies credentials against the `users` table.
   - **JWT Keypair Encryption (RS256) & Bcrypt Hashing**: Authentication is managed natively within the Smart-Bot project. The Python backend generates an **RS256 Keypair** for JWT signing and uses `passlib` with `bcrypt` for secure password hashing in the `users` table. Admin and user accounts are seeded for testing.
   - **postMessage Origin Security**: To prevent arbitrary websites from embedding the iframe and injecting fake authentications via `postMessage`, the Preact application implements a strict `SMART_BOT_AUTH` type check and origin whitelist.
@@ -128,8 +130,8 @@ docker-compose exec core_backend python scripts/clear_memory.py --all
 
 ## 10. Voice/Audio Chat Testing & Validation
 
-### Test Suite: `test_voice_chat.py`
-Located at `core_backend/scripts/test_voice_chat.py`. Validates the complete audio pipeline end-to-end with 7 turns (4 voice, 3 text) in Vietnamese.
+### Test Suite: E2E Runner Scripts
+Located at `core_backend/scripts/run_e2e_general.py` and `run_e2e_voice.py`.
 
 **Test Scenario**:
 - T1 (VOICE): Synthetic audio greeting → AI gracefully asks to repeat if STT fails
@@ -142,7 +144,8 @@ Located at `core_backend/scripts/test_voice_chat.py`. Validates the complete aud
 
 **Execution**:
 ```bash
-docker compose exec core_backend python scripts/test_voice_chat.py
+docker compose exec core_backend python scripts/run_e2e_general.py
+docker compose exec core_backend python scripts/run_e2e_voice.py
 ```
 
 **Expected Output**: 7/7 PASS. Verifies:
