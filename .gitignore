@@ -1,6 +1,5 @@
 # Environment Variables
 .env
-.env.local
 
 # Virtual Environment
 venv/
